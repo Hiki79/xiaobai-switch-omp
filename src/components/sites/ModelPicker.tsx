@@ -186,7 +186,16 @@ export function ModelPicker({
                   >
                     {group.prefix}
                   </span>
-                  <Tag style={{ marginInlineEnd: 0 }}>
+                  <Tag
+                    data-model-count
+                    style={{
+                      marginInlineEnd: 0,
+                      fontSize: token.fontSizeSM - 2,
+                      lineHeight: `${token.fontSizeSM + 2}px`,
+                      paddingInline: token.paddingXXS,
+                      paddingBlock: 0,
+                    }}
+                  >
                     {t("sites.modelCount", { count: group.models.length })}
                   </Tag>
                 </div>

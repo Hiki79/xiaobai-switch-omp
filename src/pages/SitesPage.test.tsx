@@ -364,10 +364,15 @@ describe("SitesPage", () => {
     const claudeGroup = document.querySelector('[data-model-group="claude"]') as HTMLElement;
     expect(claudeGroup).toBeTruthy();
 
-    expect(gptGroup.querySelector('.ant-tag[title="gpt-4.1"]')).toBeTruthy();
+    const gptModelTag = gptGroup.querySelector('.ant-tag[title="gpt-4.1"]') as HTMLElement;
+    const gptCountTag = gptGroup.querySelector("[data-model-count]") as HTMLElement;
+    expect(gptModelTag).toBeTruthy();
     expect(claudeGroup.querySelector('.ant-tag[title="claude-sonnet-4"]')).toBeTruthy();
+    expect(gptCountTag).toBeTruthy();
     expect(gptGroup).toHaveTextContent("1 个模型");
     expect(claudeGroup).toHaveTextContent("1 个模型");
+    expect(gptModelTag.style.fontSize).toBe("");
+    expect(Number.parseFloat(gptCountTag.style.fontSize)).toBeLessThan(12);
     expect(gptGroup.compareDocumentPosition(claudeGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
