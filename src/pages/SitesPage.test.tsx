@@ -73,6 +73,8 @@ describe("SitesPage", () => {
     );
 
     expect(tag.querySelector(".ant-tag-close-icon")).toBeTruthy();
+    expect(tag.style.fontSize).toBe("");
+    expect(tag.style.paddingBlock).toBe("");
 
     const addBtn = screen.getByRole("button", { name: "手动添加" });
     expect(addBtn.className).toMatch(/ant-btn-sm/);

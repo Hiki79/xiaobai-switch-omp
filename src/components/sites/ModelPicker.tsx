@@ -185,10 +185,6 @@ export function ModelPicker({
                   style={{
                     cursor: "pointer",
                     marginInlineEnd: 0,
-                    fontSize: 14,
-                    lineHeight: "22px",
-                    paddingInline: 11,
-                    paddingBlock: 5,
                     borderColor: selected ? token.colorPrimary : undefined,
                     userSelect: "none",
                   }}
