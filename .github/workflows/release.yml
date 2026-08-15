@@ -1,0 +1,181 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  check-version:
+    name: Check Version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate tag vs package.json / tauri.conf / Cargo.toml
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          PKG_VERSION="v$(jq -r .version package.json)"
+          TAURI_VERSION="v$(jq -r .version src-tauri/tauri.conf.json)"
+          CARGO_VERSION="v$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -n1)"
+
+          echo "tag:          $TAG"
+          echo "package.json: $PKG_VERSION"
+          echo "tauri.conf:   $TAURI_VERSION"
+          echo "Cargo.toml:   $CARGO_VERSION"
+
+          if [[ "$TAG" != "$PKG_VERSION" || "$TAG" != "$TAURI_VERSION" || "$TAG" != "$CARGO_VERSION" ]]; then
+            echo "Tag and version files are not consistent. Run: pnpm bump ${TAG#v}"
+            exit 1
+          fi
+          echo "Version $TAG is consistent"
+
+  release:
+    name: Build (${{ matrix.target }})
+    needs: [check-version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: macos-arm64
+            args: --target aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: macos-x64
+            args: --target x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows-x64
+            args: --target x86_64-pc-windows-msvc
+            msvc_arch: amd64
+          # Private repos cannot use the free windows-11-arm label; cross-compile
+          # ARM64 from windows-latest. WiX MSI does not support ARM64 — NSIS only.
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            platform: windows-arm64
+            args: --target aarch64-pc-windows-msvc --bundles nsis
+            msvc_arch: amd64_arm64
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "v1"
+          key: "${{ matrix.os }}-${{ matrix.target }}"
+          workspaces: src-tauri -> target
+
+      - name: Configure MSVC for target
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      # package.json packageManager is the only pnpm pin (do not also set version:)
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build with Tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "XiaoBaiSwitch ${{ github.ref_name }}"
+          releaseBody: |
+            ## XiaoBaiSwitch ${{ github.ref_name }}
+
+            ### Downloads
+            - **macOS (Apple Silicon)**: `.dmg` (aarch64)
+            - **macOS (Intel)**: `.dmg` (x86_64)
+            - **Windows (x64)**: `.msi` / `.exe` (NSIS)
+            - **Windows (ARM64)**: `.exe` (NSIS)
+
+            ### Notes
+            - macOS builds are **unsigned**. First open may require: right-click → Open, or System Settings → Privacy & Security.
+            - Windows may prompt for WebView2 if the system component is missing (bootstrapper is embedded).
+
+            Built from tag `${{ github.ref_name }}`.
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          args: ${{ matrix.args }}
+
+      - name: Package Windows portable (zip)
+        if: startsWith(matrix.platform, 'windows-')
+        shell: pwsh
+        run: |
+          # Do not put a trailing comma after Join-Path args — PowerShell
+          # treats `Join-Path $dir "a.exe", Join-Path $dir "b.exe"` as one call.
+          $releaseDir = Join-Path "src-tauri/target/${{ matrix.target }}" "release"
+          Write-Host "PWD=$(Get-Location) releaseDir=$releaseDir"
+          $exe = $null
+          foreach ($name in @("xiaobai-switch.exe", "XiaoBaiSwitch.exe")) {
+            $candidate = Join-Path $releaseDir $name
+            if (Test-Path -LiteralPath $candidate) {
+              $exe = $candidate
+              break
+            }
+          }
+          if (-not $exe) {
+            if (Test-Path -LiteralPath $releaseDir) {
+              Get-ChildItem -LiteralPath $releaseDir -File | ForEach-Object { Write-Host "file=$($_.Name)" }
+            }
+            throw "Missing Windows binary under $releaseDir"
+          }
+          $zipName = "XiaoBaiSwitch_${{ github.ref_name }}_${{ matrix.platform }}-portable.zip"
+          Compress-Archive -LiteralPath $exe -DestinationPath $zipName -Force
+          Write-Host "Created $zipName from $exe"
+
+      - name: Upload Windows portable to release
+        if: startsWith(matrix.platform, 'windows-')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: XiaoBaiSwitch_${{ github.ref_name }}_${{ matrix.platform }}-portable.zip
+
+  publish-release:
+    name: Publish Release
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
+          token: ${{ secrets.GITHUB_TOKEN }}

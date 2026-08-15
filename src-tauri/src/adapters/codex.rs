@@ -1,0 +1,648 @@
+use crate::adapters::atomic::{atomic_write, backup_file, restore_file};
+use crate::crypto::{key_fingerprint, key_prefix};
+use crate::domain::{
+    env_key_for_site, provider_id_for_site, ApplyStatus, CodexApplyOptions, SiteRow, TargetBinding,
+    TargetKind, TouchedKeys,
+};
+use crate::env_inject::codex_env_file::{
+    read_env_file, remove_env_key, upsert_env_key, write_env_file,
+};
+use crate::error::{AppError, AppResult};
+use crate::paths::{codex_env_path, resolve_codex_home, set_secret_permissions};
+use chrono::Utc;
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
+use toml_edit::{value, DocumentMut};
+use uuid::Uuid;
+
+pub struct CodexApplyOutcome {
+    pub binding: TargetBinding,
+    pub touched: TouchedKeys,
+    pub backup_paths: Vec<String>,
+    pub live_summary: HashMap<String, Option<String>>,
+    pub message: String,
+    pub env_key: String,
+    pub provider_id: String,
+}
+
+pub fn config_path(codex_home_override: Option<&str>) -> AppResult<PathBuf> {
+    Ok(resolve_codex_home(codex_home_override)?.join("config.toml"))
+}
+
+/// Existing catalog files that write-all-models will replace (pointer and/or dest).
+pub fn catalogs_to_backup(
+    doc: &DocumentMut,
+    our_catalog: &PathBuf,
+    codex_home: &std::path::Path,
+) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(raw) = doc.get("model_catalog_json").and_then(|i| i.as_str()) {
+        if let Some(path) = expand_catalog_path(raw, codex_home) {
+            if path.exists() && !out.iter().any(|p| p == &path) {
+                out.push(path);
+            }
+        }
+    }
+    if our_catalog.exists() && !out.iter().any(|p| p == our_catalog) {
+        out.push(our_catalog.clone());
+    }
+    out
+}
+
+fn expand_catalog_path(raw: &str, codex_home: &std::path::Path) -> Option<PathBuf> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed == "~" {
+        return crate::paths::home_dir().ok();
+    }
+    if let Some(rest) = trimmed.strip_prefix("~/") {
+        return crate::paths::home_dir().ok().map(|h| h.join(rest));
+    }
+    let path = PathBuf::from(trimmed);
+    if path.is_absolute() {
+        Some(path)
+    } else {
+        Some(codex_home.join(path))
+    }
+}
+
+pub fn model_catalog_path(codex_home_override: Option<&str>) -> AppResult<PathBuf> {
+    Ok(resolve_codex_home(codex_home_override)?.join("xiaobai-model-catalog.json"))
+}
+
+fn build_model_catalog(models: &[(String, String)], site_name: &str) -> Value {
+    let items: Vec<Value> = models
+        .iter()
+        .enumerate()
+        .map(|(i, (id, display))| {
+            json!({
+                "slug": id,
+                "display_name": display,
+                "description": format!("From XiaoBaiSwitch · {site_name}"),
+                "context_window": 128000,
+                "max_context_window": 128000,
+                "visibility": "list",
+                "supported_in_api": true,
+                "input_modalities": ["text"],
+                "priority": i + 1,
+                "default_reasoning_level": "medium",
+                "supported_reasoning_levels": [
+                    { "effort": "low", "description": "Fast responses with lighter reasoning" },
+                    { "effort": "medium", "description": "Balances speed and reasoning depth" },
+                    { "effort": "high", "description": "Greater reasoning depth for complex problems" },
+                    { "effort": "xhigh", "description": "Extra high reasoning depth" }
+                ]
+            })
+        })
+        .collect();
+    json!({ "models": items })
+}
+
+pub fn apply(
+    site: &SiteRow,
+    api_key: &str,
+    model_id: &str,
+    options: &CodexApplyOptions,
+    codex_home_override: Option<&str>,
+    backup_root: &PathBuf,
+) -> AppResult<CodexApplyOutcome> {
+    let cfg_path = config_path(codex_home_override)?;
+    let env_path = codex_env_path()?;
+    let catalog_path = model_catalog_path(codex_home_override)?;
+    let provider_id = provider_id_for_site(&site.id);
+    let env_key = env_key_for_site(&site.id);
+    let preview = crate::url_normalize::normalize_base_url(&site.base_url)?;
+
+    let mut touched = TouchedKeys::default();
+    let mut backup_paths = Vec::new();
+
+    // config.toml
+    let cfg_existed = cfg_path.exists();
+    if cfg_existed {
+        let bak = backup_file(&cfg_path, backup_root)?;
+        backup_paths.push(bak.display().to_string());
+        touched.paths.push(cfg_path.display().to_string());
+    } else {
+        touched.created_paths.push(cfg_path.display().to_string());
+    }
+
+    let mut doc = if cfg_existed {
+        let text = fs::read_to_string(&cfg_path)?;
+        text.parse::<DocumentMut>()
+            .map_err(|e| AppError::new("invalid_config", format!("invalid config.toml: {e}")))?
+    } else {
+        DocumentMut::new()
+    };
+
+    doc["model"] = value(model_id);
+    doc["model_provider"] = value(&provider_id);
+
+    if let Some(effort) = &options.reasoning_effort {
+        doc["model_reasoning_effort"] = value(effort.as_str());
+    } else {
+        // leave existing value unless we previously managed it — keep simple: only set when provided
+    }
+
+    {
+        let providers = doc["model_providers"]
+            .or_insert(toml_edit::table())
+            .as_table_mut()
+            .ok_or_else(|| AppError::new("invalid_config", "model_providers must be table"))?;
+        let table = providers
+            .entry(&provider_id)
+            .or_insert(toml_edit::table())
+            .as_table_mut()
+            .ok_or_else(|| AppError::new("invalid_config", "provider table"))?;
+        table["name"] = value(&site.name);
+        table["base_url"] = value(&preview.codex_base_url);
+        table["env_key"] = value(&env_key);
+        table["wire_api"] = value("responses");
+    }
+
+    // Optional model catalog for in-app model switching
+    if options.write_all_models {
+        let catalog_models = if options.catalog_models.is_empty() {
+            vec![(model_id.to_string(), model_id.to_string())]
+        } else {
+            options.catalog_models.clone()
+        };
+        let catalog = build_model_catalog(&catalog_models, &site.name);
+        let catalog_text = serde_json::to_string_pretty(&catalog)? + "\n";
+        let codex_home = resolve_codex_home(codex_home_override)?;
+        for existing in catalogs_to_backup(&doc, &catalog_path, &codex_home) {
+            let bak = backup_file(&existing, backup_root)?;
+            backup_paths.push(bak.display().to_string());
+            let src = existing.display().to_string();
+            if !touched.paths.contains(&src) {
+                touched.paths.push(src);
+            }
+        }
+        if !catalog_path.exists() {
+            touched
+                .created_paths
+                .push(catalog_path.display().to_string());
+        }
+        if let Err(e) = atomic_write(&catalog_path, catalog_text.as_bytes(), false) {
+            if cfg_existed {
+                if let Some(bak) = backup_paths.first() {
+                    let _ = restore_file(&PathBuf::from(bak), &cfg_path);
+                }
+            }
+            return Err(e);
+        }
+        doc["model_catalog_json"] = value(catalog_path.display().to_string());
+    }
+
+    let cfg_text = doc.to_string();
+    if let Err(e) = atomic_write(&cfg_path, cfg_text.as_bytes(), false) {
+        if cfg_existed {
+            if let Some(bak) = backup_paths.first() {
+                let _ = restore_file(&PathBuf::from(bak), &cfg_path);
+            }
+        } else {
+            let _ = fs::remove_file(&cfg_path);
+        }
+        return Err(e);
+    }
+
+    // codex.env
+    let env_existed = env_path.exists();
+    if env_existed {
+        let bak = backup_file(&env_path, backup_root)?;
+        backup_paths.push(bak.display().to_string());
+        if !touched.paths.contains(&env_path.display().to_string()) {
+            touched.paths.push(env_path.display().to_string());
+        }
+    } else {
+        touched.created_paths.push(env_path.display().to_string());
+    }
+
+    let mut lines = if env_existed {
+        read_env_file(&env_path)?
+    } else {
+        vec![
+            "# Managed by XiaoBaiSwitch — do not commit".into(),
+            String::new(),
+        ]
+    };
+    upsert_env_key(&mut lines, &env_key, api_key);
+    if let Err(e) = write_env_file(&env_path, &lines) {
+        if cfg_existed {
+            if let Some(bak) = backup_paths.first() {
+                let _ = restore_file(&PathBuf::from(bak), &cfg_path);
+            }
+        }
+        return Err(e);
+    }
+    set_secret_permissions(&env_path);
+    touched.env_keys.push(env_key.clone());
+
+    let mut expected = HashMap::new();
+    expected.insert("model".into(), model_id.into());
+    expected.insert("model_provider".into(), provider_id.clone());
+    expected.insert("base_url".into(), preview.codex_base_url.clone());
+    expected.insert("env_key".into(), env_key.clone());
+    expected.insert("wire_api".into(), "responses".into());
+    if let Some(effort) = &options.reasoning_effort {
+        expected.insert("model_reasoning_effort".into(), effort.as_str().into());
+    }
+    if options.write_all_models {
+        expected.insert(
+            "model_catalog_json".into(),
+            catalog_path.display().to_string(),
+        );
+    }
+
+    let mut live_summary = HashMap::new();
+    live_summary.insert("model".into(), Some(model_id.into()));
+    live_summary.insert("model_provider".into(), Some(provider_id.clone()));
+    live_summary.insert("base_url".into(), Some(preview.codex_base_url));
+    live_summary.insert("env_key".into(), Some(env_key.clone()));
+    live_summary.insert(env_key.clone(), Some(key_prefix(api_key)));
+    if let Some(effort) = &options.reasoning_effort {
+        live_summary.insert(
+            "model_reasoning_effort".into(),
+            Some(effort.as_str().into()),
+        );
+    }
+    if options.write_all_models {
+        live_summary.insert(
+            "model_catalog_json".into(),
+            Some(catalog_path.display().to_string()),
+        );
+        live_summary.insert(
+            "catalog_models".into(),
+            Some(options.catalog_models.len().max(1).to_string()),
+        );
+    }
+
+    let mut managed_paths = vec![
+        cfg_path.display().to_string(),
+        env_path.display().to_string(),
+    ];
+    if options.write_all_models {
+        managed_paths.push(catalog_path.display().to_string());
+    }
+
+    let binding = TargetBinding {
+        target: TargetKind::Codex,
+        site_id: Some(site.id.clone()),
+        site_name_snapshot: site.name.clone(),
+        model_id: model_id.into(),
+        provider_id: Some(provider_id.clone()),
+        key_fingerprint: key_fingerprint(api_key),
+        managed_paths,
+        managed_env_keys: vec![env_key.clone()],
+        expected_fields: expected,
+        orphan: false,
+        applied_at: Utc::now().timestamp_millis(),
+        apply_record_id: Some(Uuid::new_v4().to_string()),
+    };
+
+    let mut message =
+        "Codex config.toml + codex.env updated. Restart Codex / open a new terminal.".to_string();
+    if options.write_all_models {
+        message.push_str(" Model catalog written for in-CLI model switching.");
+    }
+
+    Ok(CodexApplyOutcome {
+        binding,
+        touched,
+        backup_paths,
+        live_summary,
+        message,
+        env_key,
+        provider_id,
+    })
+}
+
+pub fn surgical_revert(
+    binding: &TargetBinding,
+    codex_home_override: Option<&str>,
+) -> AppResult<()> {
+    let cfg_path = config_path(codex_home_override)?;
+    let catalog_path = model_catalog_path(codex_home_override)?;
+
+    if cfg_path.exists() {
+        if let Some(provider_id) = &binding.provider_id {
+            let text = fs::read_to_string(&cfg_path)?;
+            if let Ok(mut doc) = text.parse::<DocumentMut>() {
+                if let Some(providers) = doc["model_providers"].as_table_mut() {
+                    providers.remove(provider_id);
+                }
+                if doc.get("model_provider").and_then(|i| i.as_str()) == Some(provider_id.as_str())
+                {
+                    doc.as_table_mut().remove("model_provider");
+                    doc.as_table_mut().remove("model");
+                    if binding
+                        .expected_fields
+                        .contains_key("model_reasoning_effort")
+                    {
+                        doc.as_table_mut().remove("model_reasoning_effort");
+                    }
+                }
+                if let Some(expected_catalog) = binding.expected_fields.get("model_catalog_json") {
+                    if doc.get("model_catalog_json").and_then(|i| i.as_str())
+                        == Some(expected_catalog.as_str())
+                    {
+                        doc.as_table_mut().remove("model_catalog_json");
+                    }
+                }
+                atomic_write(&cfg_path, doc.to_string().as_bytes(), false)?;
+            }
+        }
+    }
+
+    // Remove catalog if we own it
+    if let Some(expected_catalog) = binding.expected_fields.get("model_catalog_json") {
+        if catalog_path.display().to_string() == *expected_catalog && catalog_path.exists() {
+            let _ = fs::remove_file(&catalog_path);
+        }
+    }
+
+    let env_path = codex_env_path()?;
+    if env_path.exists() {
+        let mut lines = read_env_file(&env_path)?;
+        for k in &binding.managed_env_keys {
+            remove_env_key(&mut lines, k);
+        }
+        write_env_file(&env_path, &lines)?;
+    }
+    Ok(())
+}
+
+pub fn summary_from_config(doc: &DocumentMut) -> HashMap<String, Option<String>> {
+    let mut out = HashMap::new();
+    if let Some(m) = doc.get("model").and_then(|i| i.as_str()) {
+        out.insert("model".into(), Some(m.into()));
+    }
+    if let Some(p) = doc.get("model_provider").and_then(|i| i.as_str()) {
+        out.insert("model_provider".into(), Some(p.into()));
+    }
+    if let Some(e) = doc.get("model_reasoning_effort").and_then(|i| i.as_str()) {
+        out.insert("model_reasoning_effort".into(), Some(e.into()));
+    }
+    if let Some(c) = doc.get("model_catalog_json").and_then(|i| i.as_str()) {
+        out.insert("model_catalog_json".into(), Some(c.into()));
+    }
+    if let Some(provider_id) = doc.get("model_provider").and_then(|i| i.as_str()) {
+        if let Some(table) = doc
+            .get("model_providers")
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get(provider_id))
+            .and_then(|v| v.as_table())
+        {
+            if let Some(url) = table.get("base_url").and_then(|i| i.as_str()) {
+                out.insert("base_url".into(), Some(url.into()));
+            }
+            if let Some(env_key) = table.get("env_key").and_then(|i| i.as_str()) {
+                out.insert("env_key".into(), Some(env_key.into()));
+            }
+        }
+    }
+    out
+}
+
+pub fn live_summary(
+    codex_home_override: Option<&str>,
+) -> AppResult<HashMap<String, Option<String>>> {
+    let cfg_path = config_path(codex_home_override)?;
+    if !cfg_path.exists() {
+        return Ok(HashMap::new());
+    }
+    let text = fs::read_to_string(&cfg_path)?;
+    let Ok(doc) = text.parse::<DocumentMut>() else {
+        return Ok(HashMap::new());
+    };
+    Ok(summary_from_config(&doc))
+}
+
+pub fn detect_status(
+    binding: Option<&TargetBinding>,
+    site: Option<&SiteRow>,
+    api_key: Option<&str>,
+    codex_home_override: Option<&str>,
+) -> AppResult<(ApplyStatus, Option<String>)> {
+    let cfg_path = config_path(codex_home_override)?;
+    let has_trace = if cfg_path.exists() {
+        let text = fs::read_to_string(&cfg_path).unwrap_or_default();
+        text.contains("xiaobai_")
+    } else {
+        false
+    };
+
+    if let Some(b) = binding {
+        if b.orphan || b.site_id.is_none() {
+            return Ok((ApplyStatus::Orphan, Some("site deleted".into())));
+        }
+        if let Some(key) = api_key {
+            if key_fingerprint(key) != b.key_fingerprint {
+                return Ok((ApplyStatus::Stale, Some("API key changed".into())));
+            }
+        }
+        if let Some(site) = site {
+            let expected_provider = provider_id_for_site(&site.id);
+            if b.provider_id.as_deref() != Some(expected_provider.as_str()) {
+                return Ok((ApplyStatus::Stale, Some("provider changed".into())));
+            }
+        }
+        if cfg_path.exists() {
+            let text = fs::read_to_string(&cfg_path)?;
+            if let Ok(doc) = text.parse::<DocumentMut>() {
+                let live_p = doc.get("model_provider").and_then(|i| i.as_str());
+                if live_p != b.provider_id.as_deref() {
+                    return Ok((ApplyStatus::Stale, Some("model_provider mismatch".into())));
+                }
+                return Ok((ApplyStatus::Applied, None));
+            }
+        }
+        return Ok((ApplyStatus::Stale, Some("config missing".into())));
+    }
+
+    if has_trace {
+        return Ok((
+            ApplyStatus::Orphan,
+            Some("untracked xiaobai provider".into()),
+        ));
+    }
+    Ok((ApplyStatus::NotApplied, None))
+}
+
+pub fn rewrite_base_url(
+    site: &SiteRow,
+    binding: &TargetBinding,
+    codex_home_override: Option<&str>,
+    backup_root: &PathBuf,
+) -> AppResult<crate::adapters::RewriteOutcome> {
+    let cfg_path = config_path(codex_home_override)?;
+    if !cfg_path.exists() {
+        return Err(AppError::new("invalid_config", "Codex config.toml missing"));
+    }
+    let provider_id = binding
+        .provider_id
+        .clone()
+        .unwrap_or_else(|| provider_id_for_site(&site.id));
+    let preview = crate::url_normalize::normalize_base_url(&site.base_url)?;
+    let bak = backup_file(&cfg_path, backup_root)?;
+    let text = fs::read_to_string(&cfg_path)?;
+    let mut doc = text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::new("invalid_config", e.to_string()))?;
+    {
+        let providers = doc["model_providers"]
+            .or_insert(toml_edit::table())
+            .as_table_mut()
+            .ok_or_else(|| AppError::new("invalid_config", "model_providers must be table"))?;
+        let table = providers
+            .entry(&provider_id)
+            .or_insert(toml_edit::table())
+            .as_table_mut()
+            .ok_or_else(|| AppError::new("invalid_config", "provider table"))?;
+        table["base_url"] = value(&preview.codex_base_url);
+    }
+    if let Err(e) = atomic_write(&cfg_path, doc.to_string().as_bytes(), false) {
+        let _ = restore_file(&PathBuf::from(&bak), &cfg_path);
+        return Err(e);
+    }
+    let mut expected = binding.expected_fields.clone();
+    expected.insert("base_url".into(), preview.codex_base_url.clone());
+    let mut live_summary = HashMap::new();
+    live_summary.insert("base_url".into(), Some(preview.codex_base_url.clone()));
+    Ok(crate::adapters::RewriteOutcome {
+        backup_paths: vec![bak.display().to_string()],
+        live_summary,
+        expected_fields: expected,
+        message: "Updated Codex provider base_url".into(),
+    })
+}
+
+#[cfg(test)]
+mod rewrite_tests {
+    use super::*;
+
+    #[test]
+    fn rewrite_updates_only_provider_base_url() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = provider_id_for_site("s1");
+        fs::write(
+            dir.path().join("config.toml"),
+            format!(
+                r#"model = "gpt-4"
+model_provider = "{provider}"
+
+[model_providers.{provider}]
+name = "T"
+base_url = "https://old.example.com/v1"
+env_key = "XIAOBAI_SITE_S1_API_KEY"
+wire_api = "responses"
+"#
+            ),
+        )
+        .unwrap();
+        let mut expected = HashMap::new();
+        expected.insert("base_url".into(), "https://old.example.com/v1".into());
+        expected.insert("model".into(), "gpt-4".into());
+        let binding = TargetBinding {
+            target: TargetKind::Codex,
+            site_id: Some("s1".into()),
+            site_name_snapshot: "T".into(),
+            model_id: "gpt-4".into(),
+            provider_id: Some(provider.clone()),
+            key_fingerprint: "x".into(),
+            managed_paths: vec![],
+            managed_env_keys: vec![],
+            expected_fields: expected,
+            orphan: false,
+            applied_at: 1,
+            apply_record_id: None,
+        };
+        let site = SiteRow {
+            id: "s1".into(),
+            name: "T".into(),
+            base_url: "https://new.example.com".into(),
+            base_urls: vec!["https://new.example.com".into()],
+            api_key_encrypted: "x".into(),
+            key_prefix: "sk-xx".into(),
+            protocol: crate::domain::SiteProtocol::OpenaiCompatible,
+            claude_auth_key_style: crate::domain::ClaudeAuthKeyStyle::AnthropicAuthToken,
+            notes: None,
+            enabled: true,
+            sort_order: 0,
+            selected_model_id: Some("gpt-4".into()),
+            last_model_fetch_at: None,
+            last_model_fetch_latency_ms: None,
+            last_model_fetch_error: None,
+            created_at: 1,
+            updated_at: 1,
+        };
+        let bak = dir.path().join("bak");
+        fs::create_dir_all(&bak).unwrap();
+        let out =
+            rewrite_base_url(&site, &binding, Some(dir.path().to_str().unwrap()), &bak).unwrap();
+        let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+        assert!(text.contains("https://new.example.com/v1"));
+        assert!(text.contains("gpt-4"));
+        assert!(text.contains("XIAOBAI_SITE_S1_API_KEY"));
+        assert_eq!(
+            out.expected_fields.get("base_url").map(String::as_str),
+            Some("https://new.example.com/v1")
+        );
+    }
+}
+
+#[cfg(test)]
+mod catalog_backup_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn collects_original_catalog_and_ours() {
+        let tmp = tempdir().unwrap();
+        let home = tmp.path();
+        let original = home.join("models_catalog.json");
+        fs::write(&original, r#"{"models":[{"slug":"old"}]}"#).unwrap();
+        let ours = home.join("xiaobai-model-catalog.json");
+        fs::write(&ours, r#"{"models":[]}"#).unwrap();
+        let mut doc = DocumentMut::new();
+        doc["model_catalog_json"] = value(original.display().to_string());
+        let paths = catalogs_to_backup(&doc, &ours, home);
+        assert!(paths.contains(&original));
+        assert!(paths.contains(&ours));
+    }
+
+    #[test]
+    fn resolves_relative_catalog_under_codex_home() {
+        let tmp = tempdir().unwrap();
+        let home = tmp.path();
+        let original = home.join("custom-models.json");
+        fs::write(&original, "{}").unwrap();
+        let ours = home.join("xiaobai-model-catalog.json");
+        let mut doc = DocumentMut::new();
+        doc["model_catalog_json"] = value("custom-models.json");
+        let paths = catalogs_to_backup(&doc, &ours, home);
+        assert_eq!(paths, vec![original]);
+    }
+
+    #[test]
+    fn backups_original_catalog_into_dir() {
+        let tmp = tempdir().unwrap();
+        let home = tmp.path();
+        let original = home.join("models_catalog.json");
+        fs::write(&original, r#"{"models":[{"slug":"kept"}]}"#).unwrap();
+        let ours = home.join("xiaobai-model-catalog.json");
+        let mut doc = DocumentMut::new();
+        doc["model_catalog_json"] = value(original.display().to_string());
+        let backup_root = home.join("bak");
+        fs::create_dir_all(&backup_root).unwrap();
+        for path in catalogs_to_backup(&doc, &ours, home) {
+            backup_file(&path, &backup_root).unwrap();
+        }
+        let copied = backup_root.join("models_catalog.json");
+        assert!(copied.exists());
+        assert!(fs::read_to_string(copied).unwrap().contains("kept"));
+    }
+}

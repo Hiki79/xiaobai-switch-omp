@@ -1,0 +1,160 @@
+<p align="center">
+  <img src="assets/brand/app-icon.svg" alt="XiaoBaiSwitch" width="160" height="160">
+</p>
+
+# Xiaobai Switch
+
+站点驱动的 Claude Code / Codex 上游配置桌面应用。
+
+以「上游站点」为中心：配置 Base URL + API Key → 拉取或手输模型 → 一键应用到 Claude Code / Codex。
+
+## 技术栈
+
+- Tauri 2 + React 19 + TypeScript + Vite
+- Ant Design 6 + Tailwind CSS 4
+- zustand + i18next（zh-CN / en-US）
+- Rust：SQLite、AES-256-GCM、reqwest、toml_edit
+
+## 开发
+
+```bash
+# 依赖
+pnpm install
+
+# 仅前端（浏览器 mock，不写本地 CLI 配置）
+pnpm dev
+
+# 桌面端（需 Rust 工具链）
+pnpm tauri dev
+
+# 检查
+pnpm typecheck
+pnpm test:run
+cd src-tauri && cargo test
+```
+
+## 数据目录
+
+`~/.xiaobai-switch/`
+
+- `xiaobai-switch.db` — 站点与绑定 SSOT
+- `master.key` — 密钥加密主密钥（勿丢失）
+- `env/codex.env` — Codex 托管环境变量
+- `backups/` — Apply 备份
+
+## Apply 写入位置
+
+| 目标 | 文件 |
+|------|------|
+| Claude Code | `~/.claude/settings.json` → `env` |
+| Codex | `~/.codex/config.toml` + `~/.xiaobai-switch/env/codex.env` |
+
+应用成功后请**重启终端或对应 CLI**。
+
+## 安全提示
+
+API Key 在应用内加密存储；Apply 后会以明文写入目标 CLI 配置。请勿将 `~/.xiaobai-switch`、`~/.claude`、`~/.codex` 同步到不可信云盘。
+
+## 从链接导入站点
+
+安装桌面端后，浏览器或其它应用可以打开 `xiaobaiswitch://` 链接，拉起 XiaoBaiSwitch 并导入上游站点。导入**不会**自动 Apply 到 Claude Code / Codex。
+
+### 用户流程
+
+1. 安装桌面端，或用 `pnpm tauri dev` 跑调试版（仅 `pnpm dev` 的 Vite 页面**不会**注册协议）。
+2. **macOS：** 系统不允许给「裸二进制」注册自定义协议。`tauri dev` 首次启动会在 `~/Applications/XiaoBaiSwitch Dev.app` 注册 `xiaobaiswitch://`。请保持调试窗口开着，再用浏览器打开链接；若浏览器仍提示无法打开，先退出浏览器再试一次。正式发布需把 `.app` 装到 `/Applications`（`Info.plist` 已声明该协议）。
+3. 点击导入链接。应用切到站点页并弹出确认框。
+4. 核对名称、线路、协议、备注和 API Key 前缀后确认。
+5. 若链接没有 `apikey`，确认后会打开预填的添加站点表单，补全密钥再保存。
+
+同一协议 + 相同线路集合（顺序无关）视为同一站点：密钥相同则复用，密钥不同则更新密钥。线路多一条或少一条会新建站点，不会自动合并。
+
+### 链接格式
+
+```text
+xiaobaiswitch://sites?name=<name>&baseurls=<url>[&baseurls=<url>…][&apikey=<key>][&protocol=openai_compatible|anthropic][&notes=<notes>]
+```
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `name` | 是 | 站点名称，最长 128 |
+| `baseurls` | 是 | 线路 Base URL，可写多条，最多 20 条 |
+| `apikey` | 否 | API Key；省略则确认后打开预填表单，由用户补全 |
+| `protocol` | 否 | `openai_compatible`（默认）或 `anthropic` |
+| `notes` | 否 | 备注，最长 2000 |
+
+别名：`baseurl` = `baseurls`；`type=openai` / `type=anthropic` = `protocol`。
+
+### 多条线路怎么写
+
+**第一项是当前 / 默认线路。** 推荐重复写 `baseurls`，避免 URL 本身带逗号时被拆错：
+
+```text
+xiaobaiswitch://sites?name=Example%20Relay&baseurls=https://a.example.com/v1&baseurls=https://b.example.com/v1&apikey=sk-xxx&protocol=openai_compatible
+```
+
+也接受写在同一个参数里，用逗号或 `|` 分隔：
+
+```text
+xiaobaiswitch://sites?name=Example&baseurls=https://a.example.com/v1,https://b.example.com/v1
+xiaobaiswitch://sites?name=Example&baseurls=https://a.example.com/v1|https://b.example.com/v1
+```
+
+`baseurl` 和 `baseurls` 可以混用，按查询串出现顺序合并：
+
+```text
+xiaobaiswitch://sites?name=Mix&baseurl=https://first.example.com/v1&baseurls=https://second.example.com/v1
+```
+
+后台生成时用 `append`，不要用 `set`（`set` 会覆盖前一条）：
+
+```html
+<script>
+  const params = new URLSearchParams();
+  params.set("name", "Example Relay");
+  params.append("baseurls", "https://a.example.com/v1");
+  params.append("baseurls", "https://b.example.com/v1");
+  params.set("apikey", "sk-user-key");
+  params.set("protocol", "openai_compatible");
+  document.getElementById("open-xbs").href = `xiaobaiswitch://sites?${params.toString()}`;
+</script>
+```
+
+URL 中携带 API Key 可能被浏览器历史、扩展或系统日志记录。不要把真实密钥写在公开页面；推荐登录后的私有后台按需生成，或省略 `apikey` 让用户在应用内补全。
+
+## 产品标识
+
+- 显示名：XiaoBaiSwitch
+- Bundle ID：`com.github.licoy.xiaobai-switch.app`
+
+## 发布（GitHub Actions）
+
+通过 **打 tag** 触发多平台构建，产物上传到 [GitHub Releases](../../releases)。
+
+| 平台 | Runner | Target |
+|------|--------|--------|
+| macOS Apple Silicon | `macos-latest` | `aarch64-apple-darwin` |
+| macOS Intel | `macos-latest` | `x86_64-apple-darwin` |
+| Windows x64 | `windows-latest` | `x86_64-pc-windows-msvc` |
+| Windows ARM64 | `windows-latest`（交叉编译） | `aarch64-pc-windows-msvc` |
+
+### 发版步骤
+
+```bash
+# 1. 同步版本号（package.json / tauri.conf.json / Cargo.toml）并创建 tag
+pnpm bump 0.1.1
+
+# 2. 推送 commit + tag → 触发 .github/workflows/release.yml
+git push && git push --tags
+
+# 或一步完成：
+pnpm bump --push 0.1.1
+```
+
+版本校验：tag 必须为 `vX.Y.Z`，且与上述三个文件中的 `version` 一致（由 `pnpm bump` 保证）。
+
+当前 macOS 产物为**未签名**构建；首次打开可能需要右键「打开」或在系统设置中允许。
+
+## License
+
+MIT

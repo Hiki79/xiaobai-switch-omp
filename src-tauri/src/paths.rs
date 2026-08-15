@@ -1,0 +1,109 @@
+use crate::error::{AppError, AppResult};
+use serde::Serialize;
+use std::fs;
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppPaths {
+    pub app_dir: String,
+    pub db_path: String,
+    pub master_key_path: String,
+    pub backups_dir: String,
+    pub codex_env_path: String,
+    pub logs_dir: String,
+}
+
+pub fn home_dir() -> AppResult<PathBuf> {
+    dirs::home_dir().ok_or_else(|| AppError::new("internal", "cannot resolve home directory"))
+}
+
+pub fn app_dir() -> AppResult<PathBuf> {
+    Ok(home_dir()?.join(".xiaobai-switch"))
+}
+
+pub fn ensure_app_dirs() -> AppResult<PathBuf> {
+    let dir = app_dir()?;
+    fs::create_dir_all(&dir)?;
+    fs::create_dir_all(dir.join("backups"))?;
+    fs::create_dir_all(dir.join("env"))?;
+    fs::create_dir_all(dir.join("locks"))?;
+    fs::create_dir_all(dir.join("logs"))?;
+    Ok(dir)
+}
+
+pub fn db_path() -> AppResult<PathBuf> {
+    Ok(app_dir()?.join("xiaobai-switch.db"))
+}
+
+pub fn master_key_path() -> AppResult<PathBuf> {
+    Ok(app_dir()?.join("master.key"))
+}
+
+pub fn codex_env_path() -> AppResult<PathBuf> {
+    Ok(app_dir()?.join("env").join("codex.env"))
+}
+
+pub fn backups_dir() -> AppResult<PathBuf> {
+    Ok(app_dir()?.join("backups"))
+}
+
+pub fn locks_dir() -> AppResult<PathBuf> {
+    Ok(app_dir()?.join("locks"))
+}
+
+pub fn default_claude_home() -> AppResult<PathBuf> {
+    Ok(home_dir()?.join(".claude"))
+}
+
+pub fn default_codex_home() -> AppResult<PathBuf> {
+    if let Ok(v) = std::env::var("CODEX_HOME") {
+        if !v.trim().is_empty() {
+            return Ok(PathBuf::from(v));
+        }
+    }
+    Ok(home_dir()?.join(".codex"))
+}
+
+pub fn resolve_claude_home(override_path: Option<&str>) -> AppResult<PathBuf> {
+    if let Some(p) = override_path {
+        if !p.trim().is_empty() {
+            return Ok(PathBuf::from(p));
+        }
+    }
+    default_claude_home()
+}
+
+pub fn resolve_codex_home(override_path: Option<&str>) -> AppResult<PathBuf> {
+    if let Some(p) = override_path {
+        if !p.trim().is_empty() {
+            return Ok(PathBuf::from(p));
+        }
+    }
+    default_codex_home()
+}
+
+pub fn app_paths_dto() -> AppResult<AppPaths> {
+    let dir = app_dir()?;
+    Ok(AppPaths {
+        app_dir: dir.display().to_string(),
+        db_path: db_path()?.display().to_string(),
+        master_key_path: master_key_path()?.display().to_string(),
+        backups_dir: backups_dir()?.display().to_string(),
+        codex_env_path: codex_env_path()?.display().to_string(),
+        logs_dir: dir.join("logs").display().to_string(),
+    })
+}
+
+#[cfg(unix)]
+pub fn set_secret_permissions(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = fs::metadata(path) {
+        let mut perms = meta.permissions();
+        perms.set_mode(0o600);
+        let _ = fs::set_permissions(path, perms);
+    }
+}
+
+#[cfg(not(unix))]
+pub fn set_secret_permissions(_path: &std::path::Path) {}

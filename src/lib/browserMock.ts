@@ -1,0 +1,507 @@
+import type {
+  AppPaths,
+  AppSettings,
+  ApplyResult,
+  BackupInfo,
+  BackupPreview,
+  CliToolInfo,
+  CreateSiteInput,
+  DeepLinkSiteImportInput,
+  DeepLinkSiteImportResult,
+  FetchModelsResult,
+  HttpBytesResult,
+  Site,
+  SiteModel,
+  SwitchRouteResult,
+  TargetKind,
+  TargetLiveStatus,
+  UpdateSiteInput,
+  UrlProbeResult,
+} from "@/types/domain";
+import { keyPrefix, normalizeBaseUrl } from "./urlNormalize";
+
+const DEFAULT_SETTINGS: AppSettings = {
+  language: "zh-CN",
+  themeMode: "system",
+  primaryColor: "#1677ff",
+  autoStart: false,
+  alwaysOnTop: false,
+  claudeHomeOverride: null,
+  codexHomeOverride: null,
+  codexEnvInjectMode: "auto",
+  forceExclusiveClaudeAuthKey: false,
+  autoCheckUpdate: true,
+  maxBackupCopies: 30,
+  proxyMode: "system",
+  proxyProtocol: "http",
+  proxyHost: null,
+  proxyPort: null,
+  routeProbeTtlMinutes: 10,
+};
+
+let settings: AppSettings = { ...DEFAULT_SETTINGS };
+let sites: Site[] = [];
+let backups: BackupInfo[] = [];
+const models = new Map<string, SiteModel[]>();
+const keys = new Map<string, string>();
+const exclusions = new Map<string, Set<string>>();
+
+export function resetBrowserMock() {
+  settings = { ...DEFAULT_SETTINGS };
+  sites = [];
+  backups = [];
+  models.clear();
+  keys.clear();
+  exclusions.clear();
+}
+
+export function seedBackups(items: BackupInfo[]) {
+  backups = items;
+}
+
+function now() {
+  return Date.now();
+}
+
+function uid() {
+  return crypto.randomUUID();
+}
+
+export async function handleBrowserCommand<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  switch (cmd) {
+    case "get_settings":
+      return settings as T;
+    case "save_settings": {
+      const partial = (args?.partial ?? {}) as Partial<AppSettings>;
+      settings = { ...settings, ...partial };
+      return settings as T;
+    }
+    case "list_sites":
+      return sites as T;
+    case "get_site": {
+      const site = sites.find((s) => s.id === args?.id);
+      if (!site) throw { code: "not_found", message: "Site not found" };
+      return site as T;
+    }
+    case "create_site": {
+      const input = args?.input as CreateSiteInput;
+      const id = uid();
+      const t = now();
+      keys.set(id, input.apiKey);
+      const urls =
+        input.baseUrls && input.baseUrls.length > 0
+          ? input.baseUrls
+          : [input.baseUrl ?? ""];
+      const site: Site = {
+        id,
+        name: input.name,
+        baseUrl: urls[0] ?? "",
+        baseUrls: urls,
+        keyPrefix: keyPrefix(input.apiKey),
+        hasKey: true,
+        protocol: input.protocol ?? "openai_compatible",
+        claudeAuthKeyStyle: input.claudeAuthKeyStyle ?? "anthropic_auth_token",
+        notes: input.notes ?? null,
+        enabled: true,
+        sortOrder: sites.length,
+        selectedModelId: null,
+        lastModelFetchAt: null,
+        lastModelFetchLatencyMs: null,
+        lastModelFetchError: null,
+        createdAt: t,
+        updatedAt: t,
+      };
+      sites = [...sites, site];
+      return site as T;
+    }
+    case "import_site_from_deep_link": {
+      const input = args?.input as DeepLinkSiteImportInput;
+      const name = input?.name?.trim() ?? "";
+      const apiKey = input?.apiKey?.trim() ?? "";
+      if (!name) throw { code: "validation_failed", message: "site name is required" };
+      if (!apiKey) throw { code: "validation_failed", message: "API key is required" };
+      const protocol = input.protocol === "anthropic" ? "anthropic" : "openai_compatible";
+      const urls =
+        input.baseUrls && input.baseUrls.length > 0
+          ? input.baseUrls
+          : [];
+      if (urls.length === 0) {
+        throw { code: "validation_failed", message: "at least one base URL is required" };
+      }
+      const sameSet = (a: string[], b: string[]) => {
+        if (a.length !== b.length) return false;
+        const sa = [...a].sort();
+        const sb = [...b].sort();
+        return sa.every((v, i) => v === sb[i]);
+      };
+      const existing = sites.find(
+        (s) => s.protocol === protocol && sameSet(s.baseUrls ?? [s.baseUrl], urls),
+      );
+      if (existing) {
+        const sameKey = keys.get(existing.id) === apiKey;
+        const updated: Site = {
+          ...existing,
+          name,
+          notes: input.notes !== undefined ? input.notes : existing.notes,
+          keyPrefix: sameKey ? existing.keyPrefix : keyPrefix(apiKey),
+          updatedAt: now(),
+        };
+        if (!sameKey) keys.set(existing.id, apiKey);
+        sites = sites.map((s) => (s.id === existing.id ? updated : s));
+        const result: DeepLinkSiteImportResult = {
+          site: updated,
+          created: false,
+          updatedKey: !sameKey,
+          reused: sameKey,
+        };
+        return result as T;
+      }
+      const created = await handleBrowserCommand<Site>("create_site", {
+        input: {
+          name,
+          baseUrls: urls,
+          baseUrl: urls[0],
+          apiKey,
+          protocol,
+          notes: input.notes ?? null,
+        } satisfies CreateSiteInput,
+      });
+      const result: DeepLinkSiteImportResult = {
+        site: created,
+        created: true,
+        updatedKey: false,
+        reused: false,
+      };
+      return result as T;
+    }
+    case "update_site": {
+      const id = args?.id as string;
+      const input = (args?.input ?? {}) as UpdateSiteInput;
+      sites = sites.map((s) => {
+        if (s.id !== id) return s;
+        if (input.apiKey) {
+          keys.set(id, input.apiKey);
+        }
+        let baseUrls = s.baseUrls?.length ? s.baseUrls : [s.baseUrl];
+        let baseUrl = s.baseUrl;
+        if (input.baseUrls && input.baseUrls.length > 0) {
+          baseUrls = input.baseUrls;
+          baseUrl = baseUrls[0];
+        } else if (input.baseUrl) {
+          if (baseUrls.includes(input.baseUrl)) {
+            baseUrls = [input.baseUrl, ...baseUrls.filter((u) => u !== input.baseUrl)];
+          } else {
+            baseUrls = [input.baseUrl, ...baseUrls.slice(1)];
+          }
+          baseUrl = input.baseUrl;
+        }
+        return {
+          ...s,
+          name: input.name ?? s.name,
+          baseUrl,
+          baseUrls,
+          keyPrefix: input.apiKey ? keyPrefix(input.apiKey) : s.keyPrefix,
+          protocol: input.protocol ?? s.protocol,
+          claudeAuthKeyStyle: input.claudeAuthKeyStyle ?? s.claudeAuthKeyStyle,
+          notes: input.notes !== undefined ? input.notes : s.notes,
+          enabled: input.enabled ?? s.enabled,
+          selectedModelId:
+            input.selectedModelId !== undefined ? input.selectedModelId : s.selectedModelId,
+          sortOrder: input.sortOrder ?? s.sortOrder,
+          updatedAt: now(),
+        };
+      });
+      const site = sites.find((s) => s.id === id);
+      if (!site) throw { code: "not_found", message: "Site not found" };
+      return site as T;
+    }
+    case "delete_site": {
+      const id = args?.id as string;
+      sites = sites.filter((s) => s.id !== id);
+      models.delete(id);
+      keys.delete(id);
+      exclusions.delete(id);
+      return undefined as T;
+    }
+    case "reorder_sites": {
+      const ids = args?.ids as string[];
+      sites = ids
+        .map((id, i) => {
+          const s = sites.find((x) => x.id === id);
+          return s ? { ...s, sortOrder: i } : null;
+        })
+        .filter(Boolean) as Site[];
+      return undefined as T;
+    }
+    case "fetch_site_models": {
+      const siteId = args?.siteId as string;
+      const site = sites.find((s) => s.id === siteId);
+      if (!site) throw { code: "not_found", message: "Site not found" };
+      const sample: SiteModel[] = [
+        {
+          id: uid(),
+          siteId,
+          modelId: "gpt-4.1",
+          displayName: "gpt-4.1",
+          ownedBy: "mock",
+          raw: null,
+          isManual: false,
+        },
+        {
+          id: uid(),
+          siteId,
+          modelId: "claude-sonnet-4",
+          displayName: "claude-sonnet-4",
+          ownedBy: "mock",
+          raw: null,
+          isManual: false,
+        },
+      ];
+      const existing = models.get(siteId) ?? [];
+      const hidden = exclusions.get(siteId) ?? new Set<string>();
+      const visibleSample = sample.filter((m) => !hidden.has(m.modelId));
+      const fetchedIds = new Set(visibleSample.map((m) => m.modelId));
+      const manuals = existing.filter((m) => m.isManual && !fetchedIds.has(m.modelId) && !hidden.has(m.modelId));
+      const merged = [...visibleSample, ...manuals];
+      models.set(siteId, merged);
+      sites = sites.map((s) =>
+        s.id === siteId
+          ? {
+              ...s,
+              lastModelFetchAt: now(),
+              lastModelFetchLatencyMs: 42,
+              lastModelFetchError: null,
+              updatedAt: now(),
+            }
+          : s,
+      );
+      const result: FetchModelsResult = {
+        models: merged,
+        latencyMs: 42,
+        endpoint: `${site.baseUrl}/v1/models`,
+        fetchedAt: now(),
+      };
+      return result as T;
+    }
+    case "list_site_models":
+      return (models.get(args?.siteId as string) ?? []) as T;
+    case "set_selected_model": {
+      const siteId = args?.siteId as string;
+      const modelId = args?.modelId as string;
+      exclusions.get(siteId)?.delete(modelId);
+      sites = sites.map((s) =>
+        s.id === siteId ? { ...s, selectedModelId: modelId, updatedAt: now() } : s,
+      );
+      const list = models.get(siteId) ?? [];
+      if (!list.some((m) => m.modelId === modelId)) {
+        models.set(siteId, [
+          ...list,
+          {
+            id: uid(),
+            siteId,
+            modelId,
+            displayName: modelId,
+            ownedBy: null,
+            raw: null,
+            isManual: true,
+          },
+        ]);
+      }
+      return undefined as T;
+    }
+    case "clear_site_models": {
+      const siteId = args?.siteId as string;
+      const site = sites.find((s) => s.id === siteId);
+      if (!site) throw { code: "not_found", message: "Site not found" };
+      models.set(siteId, []);
+      site.selectedModelId = null;
+      site.updatedAt = now();
+      return site as T;
+    }
+    case "delete_site_model": {
+      const siteId = args?.siteId as string;
+      const modelId = args?.modelId as string;
+      const list = (models.get(siteId) ?? []).filter((m) => m.modelId !== modelId);
+      if (list.length === (models.get(siteId) ?? []).length) {
+        throw { code: "not_found", message: "model not found" };
+      }
+      const hidden = exclusions.get(siteId) ?? new Set<string>();
+      hidden.add(modelId);
+      exclusions.set(siteId, hidden);
+      models.set(siteId, list);
+      const site = sites.find((s) => s.id === siteId);
+      if (!site) throw { code: "not_found", message: "Site not found" };
+      if (site.selectedModelId === modelId) {
+        site.selectedModelId = list[0]?.modelId ?? null;
+        site.updatedAt = now();
+      }
+      return site as T;
+    }
+    case "list_target_status": {
+      const statuses: TargetLiveStatus[] = [
+        {
+          kind: "claude_code",
+          installed: false,
+          version: null,
+          configPath: "~/.claude/settings.json",
+          status: "not_applied",
+          appliedSiteId: null,
+          appliedSiteName: null,
+          appliedModelId: null,
+          providerId: null,
+          orphan: false,
+          liveSummary: {},
+          lastAppliedAt: null,
+          staleReason: null,
+        },
+        {
+          kind: "codex",
+          installed: false,
+          version: null,
+          configPath: "~/.codex/config.toml",
+          status: "not_applied",
+          appliedSiteId: null,
+          appliedSiteName: null,
+          appliedModelId: null,
+          providerId: null,
+          orphan: false,
+          liveSummary: {},
+          lastAppliedAt: null,
+          staleReason: null,
+        },
+      ];
+      return statuses as T;
+    }
+    case "apply_site": {
+      const result: ApplyResult = {
+        siteId: args?.siteId as string,
+        modelId: args?.modelId as string,
+        results: ((args?.targets as string[]) ?? []).map((t) => ({
+          target: t as "claude_code" | "codex",
+          ok: true,
+          status: "applied",
+          backupPaths: [],
+          message: "Browser mock: apply simulated (no filesystem writes)",
+        })),
+        appliedAt: now(),
+      };
+      return result as T;
+    }
+    case "revert_target":
+    case "cleanup_orphan_target":
+      return undefined as T;
+    case "list_apply_records":
+      return [] as T;
+    case "list_backups": {
+      const target = args?.target as TargetKind | undefined;
+      const list = target ? backups.filter((b) => b.target === target) : backups;
+      return list as T;
+    }
+    case "preview_backup": {
+      const id = String(args?.id ?? "");
+      const b = backups.find((x) => x.id === id);
+      const preview: BackupPreview = {
+        id,
+        summary: {
+          ANTHROPIC_MODEL: b?.modelId ?? "gpt-5.6",
+          ANTHROPIC_BASE_URL: "https://api.example.com",
+        },
+        files: (b?.files ?? []).map((name) => ({
+          name,
+          path: `${b?.dir ?? ""}/${name}`,
+        })),
+      };
+      return preview as T;
+    }
+    case "delete_backup": {
+      const id = String(args?.id ?? "");
+      backups = backups.filter((b) => b.id !== id);
+      return undefined as T;
+    }
+    case "restore_backup":
+      return undefined as T;
+    case "detect_cli_tools": {
+      const tools: CliToolInfo[] = [
+        { kind: "claude_code", installed: false, version: null, path: null },
+        { kind: "codex", installed: false, version: null, path: null },
+      ];
+      return tools as T;
+    }
+    case "get_app_paths": {
+      const paths: AppPaths = {
+        appDir: "~/.xiaobai-switch",
+        dbPath: "~/.xiaobai-switch/xiaobai-switch.db",
+        masterKeyPath: "~/.xiaobai-switch/master.key",
+        backupsDir: "~/.xiaobai-switch/backups",
+        codexEnvPath: "~/.xiaobai-switch/env/codex.env",
+        logsDir: "~/.xiaobai-switch/logs",
+      };
+      return paths as T;
+    }
+    case "set_always_on_top":
+    case "minimize_window":
+    case "toggle_maximize_window":
+    case "open_path":
+    case "open_url":
+      return undefined as T;
+    case "take_pending_deep_link":
+      return null as T;
+    case "fetch_http_text": {
+      const url = String(args?.url ?? "");
+      return {
+        status: 0,
+        contentType: "",
+        finalUrl: url,
+        body: "",
+      } as T;
+    }
+    case "fetch_http_bytes": {
+      const url = String(args?.url ?? "");
+      const empty: HttpBytesResult = {
+        status: 0,
+        contentType: "",
+        finalUrl: url,
+        base64: "",
+      };
+      return empty as T;
+    }
+    case "probe_urls": {
+      const urls = (args?.urls as string[]) ?? [];
+      const results: UrlProbeResult[] = urls.map((url, i) => ({
+        url,
+        ok: true,
+        latencyMs: [80, 1500, 4000][i % 3] ?? 80,
+        status: 200,
+        error: null,
+      }));
+      return results as T;
+    }
+    case "switch_site_route": {
+      const siteId = args?.siteId as string;
+      const baseUrl = String(args?.baseUrl ?? "").trim();
+      const current = sites.find((s) => s.id === siteId);
+      if (!current) throw { code: "not_found", message: "Site not found" };
+      const urls = current.baseUrls?.length ? current.baseUrls : [current.baseUrl];
+      if (!urls.includes(baseUrl)) {
+        throw { code: "validation_failed", message: "base URL is not a configured route" };
+      }
+      const next = [baseUrl, ...urls.filter((u) => u !== baseUrl)];
+      sites = sites.map((s) =>
+        s.id === siteId ? { ...s, baseUrl, baseUrls: next, updatedAt: now() } : s,
+      );
+      const site = sites.find((s) => s.id === siteId)!;
+      const result: SwitchRouteResult = { site, results: [] };
+      return result as T;
+    }
+    case "preview_urls":
+      return normalizeBaseUrl(String(args?.baseUrl ?? "")) as T;
+    default:
+      throw {
+        code: "internal",
+        message: `Unknown command in browser mock: ${cmd}`,
+      };
+  }
+}

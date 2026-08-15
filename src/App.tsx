@@ -1,0 +1,158 @@
+import { useEffect, useRef, useState } from "react";
+import { ConfigProvider, App as AntdApp, theme, Layout } from "antd";
+import zhCN from "antd/locale/zh_CN";
+import enUS from "antd/locale/en_US";
+import { useTranslation } from "react-i18next";
+import { TitleBar } from "@/components/layout/TitleBar";
+import { SideNav } from "@/components/layout/SideNav";
+import { SitesPage } from "@/pages/SitesPage";
+import { ApplyPage } from "@/pages/ApplyPage";
+import { SettingsPage } from "@/pages/SettingsPage";
+import { useSettingsStore, useUIStore, type AppPage } from "@/stores";
+import { useResolvedDarkMode } from "@/hooks/useResolvedDarkMode";
+import { useSiteDeepLink } from "@/hooks/useSiteDeepLink";
+import { isTauri } from "@/lib/invoke";
+import "./i18n";
+
+async function showWindow() {
+  try {
+    const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+    const window = getCurrentWebviewWindow();
+    await window.show();
+    await window.setFocus();
+  } catch (e) {
+    console.warn("Failed to show window:", e);
+  }
+}
+
+/**
+ * Keep visited main pages mounted (display:none) so return visits are instant.
+ * First visit mounts immediately — each page shows its own skeleton while data loads.
+ */
+function KeepAlivePages({ activePage }: { activePage: AppPage }) {
+  const [mounted, setMounted] = useState<Set<AppPage>>(() => new Set([activePage]));
+
+  useEffect(() => {
+    setMounted((prev) => {
+      if (prev.has(activePage)) return prev;
+      const next = new Set(prev);
+      next.add(activePage);
+      return next;
+    });
+  }, [activePage]);
+
+  return (
+    <div className="relative h-full min-h-0 w-full">
+      {mounted.has("sites") && (
+        <div
+          className="h-full min-h-0"
+          style={{ display: activePage === "sites" ? "flex" : "none" }}
+          aria-hidden={activePage !== "sites"}
+        >
+          <div className="flex h-full min-h-0 w-full flex-col">
+            <SitesPage />
+          </div>
+        </div>
+      )}
+      {mounted.has("apply") && (
+        <div
+          className="h-full min-h-0"
+          style={{ display: activePage === "apply" ? "flex" : "none" }}
+          aria-hidden={activePage !== "apply"}
+        >
+          <div className="flex h-full min-h-0 w-full flex-col">
+            <ApplyPage />
+          </div>
+        </div>
+      )}
+      {mounted.has("settings") && (
+        <div
+          className="h-full min-h-0"
+          style={{ display: activePage === "settings" ? "flex" : "none" }}
+          aria-hidden={activePage !== "settings"}
+        >
+          <div className="flex h-full min-h-0 w-full flex-col">
+            <SettingsPage />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AppInner() {
+  const { token } = theme.useToken();
+  const { modal, message } = AntdApp.useApp();
+  const { i18n } = useTranslation();
+  const activePage = useUIStore((s) => s.activePage);
+  const fetchSettings = useSettingsStore((s) => s.fetchSettings);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useSiteDeepLink({ modal, message });
+
+  useEffect(() => {
+    void fetchSettings().then(() => {
+      const lang = useSettingsStore.getState().settings.language;
+      if (lang) void i18n.changeLanguage(lang);
+    });
+  }, [fetchSettings, i18n]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--border-color", token.colorBorderSecondary);
+    root.style.setProperty("--color-bg-container", token.colorBgContainer);
+    root.style.setProperty("--color-bg-elevated", token.colorBgElevated);
+    root.style.setProperty("--color-text", token.colorText);
+    root.style.setProperty("--color-text-secondary", token.colorTextSecondary);
+    root.style.setProperty("--color-primary", token.colorPrimary);
+    root.style.setProperty("--scrollbar-thumb", token.colorTextQuaternary);
+    root.style.setProperty("--scrollbar-thumb-hover", token.colorTextTertiary);
+    document.body.style.backgroundColor = token.colorBgContainer;
+  }, [token]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    void showWindow();
+  }, []);
+
+  return (
+    <div ref={rootRef} className="flex h-full flex-col">
+      <TitleBar />
+      <Layout className="min-h-0 flex-1" style={{ background: token.colorBgContainer }}>
+        <div className="flex min-h-0 flex-1">
+          <SideNav />
+          <main className="min-w-0 flex-1">
+            <KeepAlivePages activePage={activePage} />
+          </main>
+        </div>
+      </Layout>
+    </div>
+  );
+}
+
+export default function App() {
+  const themeMode = useSettingsStore((s) => s.settings.themeMode);
+  const primaryColor = useSettingsStore((s) => s.settings.primaryColor);
+  const language = useSettingsStore((s) => s.settings.language);
+  const isDark = useResolvedDarkMode(themeMode);
+
+  return (
+    <ConfigProvider
+      locale={language === "en-US" ? enUS : zhCN}
+      theme={{
+        algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        token: {
+          colorPrimary: primaryColor || "#1677ff",
+          borderRadius: 8,
+        },
+      }}
+      modal={{
+        centered: true,
+        styles: { mask: { backdropFilter: "blur(4px)" } },
+      }}
+    >
+      <AntdApp className="h-full">
+        <AppInner />
+      </AntdApp>
+    </ConfigProvider>
+  );
+}

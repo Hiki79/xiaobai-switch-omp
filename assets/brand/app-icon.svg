@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <!-- Warm charcoal disk with ~8% transparent padding. -->
+  <circle cx="512" cy="512" r="431" fill="#41424A"/>
+
+  <!-- A quiet two-way route sits behind XiaoBai. -->
+  <g stroke="#F8F6F0" stroke-width="32" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M518 488H438C394 488 371 463 356 422L282 330"/>
+    <path d="M518 536H438C394 536 371 561 356 602L282 694"/>
+    <circle cx="282" cy="330" r="39" fill="#41424A" stroke-width="28"/>
+    <circle cx="282" cy="694" r="39" fill="#41424A" stroke-width="28"/>
+  </g>
+
+  <!-- XiaoBai remains the visual focus. -->
+  <circle cx="616" cy="512" r="132" fill="#F8F6F0"/>
+  <circle cx="578" cy="512" r="16" fill="#41424A"/>
+  <circle cx="654" cy="512" r="16" fill="#41424A"/>
+</svg>

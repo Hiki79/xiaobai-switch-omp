@@ -1,0 +1,175 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import type { SiteDeepLinkPayload } from "@/lib/siteDeepLink";
+import { confirmSiteDeepLinkImport, SiteDeepLinkConfirmContent } from "./useSiteDeepLink";
+import "@/i18n";
+
+const payload: SiteDeepLinkPayload = {
+  name: "Example Relay",
+  baseUrls: ["https://a.example.com", "https://b.example.com"],
+  apiKey: "sk-example",
+  protocol: "openai_compatible",
+  notes: "hi",
+};
+
+const site = {
+  id: "site-1",
+  name: "Example Relay",
+  baseUrl: "https://a.example.com",
+  baseUrls: ["https://a.example.com", "https://b.example.com"],
+  keyPrefix: "sk-e…mple",
+  hasKey: true,
+  protocol: "openai_compatible" as const,
+  claudeAuthKeyStyle: "anthropic_auth_token" as const,
+  notes: "hi",
+  enabled: true,
+  sortOrder: 0,
+  selectedModelId: null,
+  lastModelFetchAt: null,
+  lastModelFetchLatencyMs: null,
+  lastModelFetchError: null,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+describe("SiteDeepLinkConfirmContent", () => {
+  it("aligns fields and puts the route hint on its own gray line", () => {
+    render(
+      <SiteDeepLinkConfirmContent
+        payload={payload}
+        t={(key) =>
+          ({
+            "sites.name": "显示名称",
+            "sites.baseUrls": "线路",
+            "sites.baseUrlDefaultHint": "第一项为当前 / 默认线路",
+            "sites.protocol": "连接协议",
+            "sites.protocolOpenai": "OpenAI 兼容",
+            "sites.notes": "备注",
+            "sites.apiKey": "API Key",
+            "sites.deepLinkSecurityHint": "请确认来源可信后再导入以免密钥残留在浏览器历史中",
+          })[key] ?? key
+        }
+      />,
+    );
+
+    expect(screen.getByText("https://a.example.com").closest("code")).toBeNull();
+    expect(screen.getByText("sk-e…mple").closest("code")).toBeNull();
+    const hint = screen.getByText("第一项为当前 / 默认线路");
+    expect(hint).toHaveClass("text-xs");
+    expect(hint.compareDocumentPosition(screen.getByText("https://a.example.com"))).toBe(
+      Node.DOCUMENT_POSITION_PRECEDING,
+    );
+    const labels = ["显示名称", "线路", "连接协议", "备注", "API Key"].map((label) =>
+      screen.getByText(label),
+    );
+    for (const label of labels) {
+      expect(label).toHaveClass("w-28");
+    }
+  });
+});
+
+describe("confirmSiteDeepLinkImport", () => {
+  it("imports after confirmation and selects the site", async () => {
+    const confirm = vi.fn();
+    const importSite = vi.fn().mockResolvedValue({
+      site,
+      created: true,
+      updatedKey: false,
+      reused: false,
+    });
+    const setSelectedSiteId = vi.fn();
+    const onCreated = vi.fn();
+    const messageSuccess = vi.fn();
+
+    confirmSiteDeepLinkImport(payload, {
+      modal: { confirm },
+      message: { success: messageSuccess, error: vi.fn(), info: vi.fn() },
+      setPage: vi.fn(),
+      setSelectedSiteId,
+      setPendingSiteForm: vi.fn(),
+      importSite,
+      onCreated,
+      t: (key) => key,
+    });
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    await confirm.mock.calls[0][0].onOk();
+
+    expect(importSite).toHaveBeenCalledWith({
+      name: "Example Relay",
+      baseUrls: ["https://a.example.com", "https://b.example.com"],
+      apiKey: "sk-example",
+      protocol: "openai_compatible",
+      notes: "hi",
+    });
+    expect(setSelectedSiteId).toHaveBeenCalledWith("site-1");
+    expect(onCreated).toHaveBeenCalledWith(site);
+    expect(messageSuccess).toHaveBeenCalledWith("sites.deepLinkCreated");
+  });
+
+  it("reports reused and updated-key outcomes", async () => {
+    const confirm = vi.fn();
+    const messageSuccess = vi.fn();
+
+    confirmSiteDeepLinkImport(payload, {
+      modal: { confirm },
+      message: { success: messageSuccess, error: vi.fn(), info: vi.fn() },
+      setPage: vi.fn(),
+      setSelectedSiteId: vi.fn(),
+      setPendingSiteForm: vi.fn(),
+      importSite: vi.fn().mockResolvedValue({
+        site,
+        created: false,
+        updatedKey: false,
+        reused: true,
+      }),
+      t: (key) => key,
+    });
+    await confirm.mock.calls[0][0].onOk();
+    expect(messageSuccess).toHaveBeenCalledWith("sites.deepLinkReused");
+
+    confirm.mockClear();
+    messageSuccess.mockClear();
+    confirmSiteDeepLinkImport(payload, {
+      modal: { confirm },
+      message: { success: messageSuccess, error: vi.fn(), info: vi.fn() },
+      setPage: vi.fn(),
+      setSelectedSiteId: vi.fn(),
+      setPendingSiteForm: vi.fn(),
+      importSite: vi.fn().mockResolvedValue({
+        site,
+        created: false,
+        updatedKey: true,
+        reused: false,
+      }),
+      t: (key) => key,
+    });
+    await confirm.mock.calls[0][0].onOk();
+    expect(messageSuccess).toHaveBeenCalledWith("sites.deepLinkUpdatedKey");
+  });
+
+  it("opens the add-site form when the link has no API key", async () => {
+    const confirm = vi.fn();
+    const importSite = vi.fn();
+    const setPendingSiteForm = vi.fn();
+    const messageInfo = vi.fn();
+
+    confirmSiteDeepLinkImport(
+      { ...payload, apiKey: null },
+      {
+        modal: { confirm },
+        message: { success: vi.fn(), error: vi.fn(), info: messageInfo },
+        setPage: vi.fn(),
+        setSelectedSiteId: vi.fn(),
+        setPendingSiteForm,
+        importSite,
+        t: (key) => key,
+      },
+    );
+
+    await confirm.mock.calls[0][0].onOk();
+    expect(importSite).not.toHaveBeenCalled();
+    expect(setPendingSiteForm).toHaveBeenCalledWith({ ...payload, apiKey: null });
+    expect(messageInfo).toHaveBeenCalledWith("sites.deepLinkNeedKey");
+  });
+});
