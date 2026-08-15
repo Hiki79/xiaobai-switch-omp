@@ -21,7 +21,6 @@ const rowStyle: React.CSSProperties = { padding: "4px 0" };
 
 function GeneralSection() {
   const { t, i18n } = useTranslation();
-  const { message } = App.useApp();
   const settings = useSettingsStore((s) => s.settings);
   const saveSettings = useSettingsStore((s) => s.saveSettings);
 
@@ -31,7 +30,6 @@ function GeneralSection() {
     if (typeof partial.alwaysOnTop === "boolean") {
       await invoke("set_always_on_top", { enabled: partial.alwaysOnTop }).catch(() => null);
     }
-    message.success(t("settings.saved"));
   };
 
   return (
@@ -116,7 +114,6 @@ function GeneralSection() {
 function NetworkSection() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
-  const { message } = App.useApp();
   const settings = useSettingsStore((s) => s.settings);
   const saveSettings = useSettingsStore((s) => s.saveSettings);
   const [host, setHost] = useState(settings.proxyHost ?? "");
@@ -129,7 +126,6 @@ function NetworkSection() {
 
   const patch = async (partial: Partial<AppSettings>) => {
     await saveSettings(partial);
-    message.success(t("settings.saved"));
   };
 
   const saveHost = () => {
@@ -299,7 +295,6 @@ function PathsSection() {
 function BackupSection() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
-  const { message } = App.useApp();
   const settings = useSettingsStore((s) => s.settings);
   const saveSettings = useSettingsStore((s) => s.saveSettings);
   const [paths, setPaths] = useState<AppPaths | null>(null);
@@ -314,7 +309,6 @@ function BackupSection() {
     if (value == null || !Number.isFinite(value)) return;
     const maxBackupCopies = Math.min(200, Math.max(1, Math.round(value)));
     await saveSettings({ maxBackupCopies });
-    message.success(t("settings.saved"));
   };
 
   return (

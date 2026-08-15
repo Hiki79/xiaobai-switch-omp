@@ -64,6 +64,7 @@ describe("SettingsPage network", () => {
     });
     expect(useSettingsStore.getState().settings.proxyMode).toBe("custom");
     expect(screen.getByText("测速结果有效期")).toBeInTheDocument();
+    expect(screen.queryByText("设置已保存")).toBeNull();
   });
 });
 
