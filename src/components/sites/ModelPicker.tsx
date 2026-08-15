@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { Site, SiteModel } from "@/types/domain";
 import { useSiteStore } from "@/stores";
 import { isAppError } from "@/lib/invoke";
+import { groupModelsByPrefix } from "@/lib/modelPrefix";
 
 interface Props {
   site: Site;
@@ -49,6 +50,8 @@ export function ModelPicker({
       return name.includes(q) || m.modelId.toLowerCase().includes(q);
     });
   }, [models, query]);
+
+  const groups = useMemo(() => groupModelsByPrefix(filtered), [filtered]);
 
   const handleFetch = async () => {
     if (onFetch) {
@@ -173,33 +176,50 @@ export function ModelPicker({
             )}
           </div>
         ) : (
-          <div className="flex flex-wrap content-start gap-2">
-            {filtered.map((m) => {
-              const selected = site.selectedModelId === m.modelId;
-              const label = m.displayName || m.modelId;
-              return (
-                <Tag
-                  key={m.id || m.modelId}
-                  closable
-                  color={selected ? "processing" : undefined}
-                  style={{
-                    cursor: "pointer",
-                    marginInlineEnd: 0,
-                    borderColor: selected ? token.colorPrimary : undefined,
-                    userSelect: "none",
-                  }}
-                  onClick={() => void setSelectedModel(site.id, m.modelId)}
-                  onClose={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    void handleDelete(m.modelId);
-                  }}
-                  title={m.modelId}
-                >
-                  {label}
-                </Tag>
-              );
-            })}
+          <div className="flex flex-col gap-3">
+            {groups.map((group) => (
+              <div key={group.prefix} data-model-group={group.prefix}>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <span
+                    className="text-xs font-medium"
+                    style={{ color: token.colorTextTertiary }}
+                  >
+                    {group.prefix}
+                  </span>
+                  <Tag style={{ marginInlineEnd: 0 }}>
+                    {t("sites.modelCount", { count: group.models.length })}
+                  </Tag>
+                </div>
+                <div className="flex flex-wrap content-start gap-2">
+                  {group.models.map((m) => {
+                    const selected = site.selectedModelId === m.modelId;
+                    const label = m.displayName || m.modelId;
+                    return (
+                      <Tag
+                        key={m.id || m.modelId}
+                        closable
+                        color={selected ? "processing" : undefined}
+                        style={{
+                          cursor: "pointer",
+                          marginInlineEnd: 0,
+                          borderColor: selected ? token.colorPrimary : undefined,
+                          userSelect: "none",
+                        }}
+                        onClick={() => void setSelectedModel(site.id, m.modelId)}
+                        onClose={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void handleDelete(m.modelId);
+                        }}
+                        title={m.modelId}
+                      >
+                        {label}
+                      </Tag>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

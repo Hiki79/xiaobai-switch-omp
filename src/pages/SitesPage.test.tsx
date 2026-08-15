@@ -344,4 +344,30 @@ describe("SitesPage", () => {
       ),
     ).toBe(false);
   });
+
+  it("groups model tags by family prefix", async () => {
+    await act(async () => {
+      await seedSite();
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    const gptGroup = await waitFor(() => {
+      const el = document.querySelector('[data-model-group="gpt"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    const claudeGroup = document.querySelector('[data-model-group="claude"]') as HTMLElement;
+    expect(claudeGroup).toBeTruthy();
+
+    expect(gptGroup.querySelector('.ant-tag[title="gpt-4.1"]')).toBeTruthy();
+    expect(claudeGroup.querySelector('.ant-tag[title="claude-sonnet-4"]')).toBeTruthy();
+    expect(gptGroup).toHaveTextContent("1 个模型");
+    expect(claudeGroup).toHaveTextContent("1 个模型");
+    expect(gptGroup.compareDocumentPosition(claudeGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
