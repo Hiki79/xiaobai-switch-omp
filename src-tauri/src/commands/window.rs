@@ -1,11 +1,77 @@
 use crate::error::AppResult;
 use tauri::Manager;
 
+/// Fallback surfaces used before the frontend token is known.
+const LIGHT_BG: &str = "#ffffff";
+const DARK_BG: &str = "#141414";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Rgb {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+/// Parse `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, or `rgba()` into 8-bit sRGB.
+fn parse_css_color(input: &str) -> Option<Rgb> {
+    let s = input.trim();
+    if let Some(hex) = s.strip_prefix('#') {
+        return parse_hex_color(hex);
+    }
+    let lower = s.to_ascii_lowercase();
+    let inner = lower
+        .strip_prefix("rgba(")
+        .or_else(|| lower.strip_prefix("rgb("))?
+        .strip_suffix(')')?;
+    let mut parts = inner.split(',');
+    let r = parse_rgb_component(parts.next()?)?;
+    let g = parse_rgb_component(parts.next()?)?;
+    let b = parse_rgb_component(parts.next()?)?;
+    Some(Rgb { r, g, b })
+}
+
+fn parse_hex_color(hex: &str) -> Option<Rgb> {
+    match hex.len() {
+        3 => Some(Rgb {
+            r: u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?,
+            g: u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?,
+            b: u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?,
+        }),
+        6 | 8 => Some(Rgb {
+            r: u8::from_str_radix(&hex[0..2], 16).ok()?,
+            g: u8::from_str_radix(&hex[2..4], 16).ok()?,
+            b: u8::from_str_radix(&hex[4..6], 16).ok()?,
+        }),
+        _ => None,
+    }
+}
+
+fn parse_rgb_component(s: &str) -> Option<u8> {
+    let t = s.trim();
+    if let Some(pct) = t.strip_suffix('%') {
+        let value: f32 = pct.trim().parse().ok()?;
+        return Some((value.clamp(0.0, 100.0) * 2.55).round() as u8);
+    }
+    t.parse().ok()
+}
+
+/// Win32 COLORREF is `0x00BBGGRR`, not `#RRGGBB`.
+fn to_colorref(rgb: Rgb) -> u32 {
+    u32::from(rgb.r) | (u32::from(rgb.g) << 8) | (u32::from(rgb.b) << 16)
+}
+
+fn resolve_surface(bg: &str, dark: bool) -> Rgb {
+    parse_css_color(bg).unwrap_or_else(|| {
+        parse_css_color(if dark { DARK_BG } else { LIGHT_BG })
+            .expect("built-in window surface colors are valid")
+    })
+}
+
 /// Windows keeps a native caption/border unless decorations are off.
 /// `titleBarStyle: Overlay` is macOS-only, so the custom title bar would
 /// otherwise sit *inside* the system chrome. Shadow stays on for Win11
-/// rounded corners; DWM border color is cleared so that 1px system frame
-/// does not fight the in-app chrome.
+/// rounded corners. The 1px DWM caption leftover is painted to match the
+/// in-app surface — `DWMWA_COLOR_NONE` leaves that strip black.
 pub fn apply_platform_window_chrome(app: &tauri::App) {
     #[cfg(windows)]
     {
@@ -18,7 +84,8 @@ pub fn apply_platform_window_chrome(app: &tauri::App) {
         if let Err(e) = win.set_shadow(true) {
             tracing::warn!("failed to enable window shadow: {e}");
         }
-        strip_windows_native_border(&win);
+        let dark = matches!(win.theme(), Ok(tauri::Theme::Dark));
+        apply_windows_chrome(&win, dark, if dark { DARK_BG } else { LIGHT_BG });
     }
     #[cfg(not(windows))]
     {
@@ -27,15 +94,37 @@ pub fn apply_platform_window_chrome(app: &tauri::App) {
 }
 
 #[cfg(windows)]
-fn strip_windows_native_border(win: &tauri::WebviewWindow) {
+fn apply_windows_chrome(win: &tauri::WebviewWindow, dark: bool, bg: &str) {
+    let rgb = resolve_surface(bg, dark);
+    if let Err(e) = win.set_theme(Some(if dark {
+        tauri::Theme::Dark
+    } else {
+        tauri::Theme::Light
+    })) {
+        tracing::warn!("failed to set window theme: {e}");
+    }
+    if let Err(e) = win.set_background_color(Some(tauri::window::Color(rgb.r, rgb.g, rgb.b, 255))) {
+        tracing::warn!("failed to set window background color: {e}");
+    }
+    apply_dwm_caption_colors(win, rgb, dark);
+}
+
+#[cfg(windows)]
+fn apply_dwm_caption_colors(win: &tauri::WebviewWindow, rgb: Rgb, dark: bool) {
     let Ok(hwnd) = win.hwnd() else {
         return;
     };
     // tauri::HWND is windows::Win32::Foundation::HWND (*mut c_void, transparent).
     let raw: *mut std::ffi::c_void = unsafe { std::mem::transmute_copy(&hwnd) };
 
+    const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
     const DWMWA_BORDER_COLOR: u32 = 34;
-    const DWMWA_COLOR_NONE: u32 = 0xFFFFFFFE;
+    const DWMWA_CAPTION_COLOR: u32 = 35;
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOZORDER: u32 = 0x0004;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+    const SWP_FRAMECHANGED: u32 = 0x0020;
 
     #[link(name = "dwmapi")]
     unsafe extern "system" {
@@ -47,15 +136,66 @@ fn strip_windows_native_border(win: &tauri::WebviewWindow) {
         ) -> i32;
     }
 
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn SetWindowPos(
+            hwnd: *mut std::ffi::c_void,
+            hwnd_insert_after: *mut std::ffi::c_void,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> i32;
+    }
+
     unsafe {
-        let color = DWMWA_COLOR_NONE;
+        let dark_mode: i32 = i32::from(dark);
+        let _ = DwmSetWindowAttribute(
+            raw,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            (&dark_mode as *const i32).cast(),
+            std::mem::size_of::<i32>() as u32,
+        );
+        let color = to_colorref(rgb);
+        let _ = DwmSetWindowAttribute(
+            raw,
+            DWMWA_CAPTION_COLOR,
+            (&color as *const u32).cast(),
+            std::mem::size_of::<u32>() as u32,
+        );
         let _ = DwmSetWindowAttribute(
             raw,
             DWMWA_BORDER_COLOR,
             (&color as *const u32).cast(),
             std::mem::size_of::<u32>() as u32,
         );
+        let _ = SetWindowPos(
+            raw,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
     }
+}
+
+/// Paint the Win11 undecorated-shadow 1px caption strip to match the app surface.
+#[tauri::command]
+pub fn sync_windows_chrome(app: tauri::AppHandle, dark: bool, bg: String) -> AppResult<()> {
+    #[cfg(windows)]
+    {
+        if let Some(win) = app.get_webview_window("main") {
+            apply_windows_chrome(&win, dark, &bg);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, dark, bg);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -110,4 +250,129 @@ pub fn open_url(url: String) -> AppResult<()> {
     tauri_plugin_opener::open_url(&url, None::<&str>)
         .map_err(|e| crate::error::AppError::new("internal", e.to_string()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_hex_rrggbb_and_short() {
+        assert_eq!(
+            parse_css_color("#ffffff"),
+            Some(Rgb {
+                r: 255,
+                g: 255,
+                b: 255
+            })
+        );
+        assert_eq!(
+            parse_css_color("#fff"),
+            Some(Rgb {
+                r: 255,
+                g: 255,
+                b: 255
+            })
+        );
+        assert_eq!(
+            parse_css_color("  #141414  "),
+            Some(Rgb {
+                r: 0x14,
+                g: 0x14,
+                b: 0x14
+            })
+        );
+        assert_eq!(
+            parse_css_color("#141414ff"),
+            Some(Rgb {
+                r: 0x14,
+                g: 0x14,
+                b: 0x14
+            })
+        );
+    }
+
+    #[test]
+    fn parse_rgb_function() {
+        assert_eq!(
+            parse_css_color("rgb(20, 20, 20)"),
+            Some(Rgb {
+                r: 20,
+                g: 20,
+                b: 20
+            })
+        );
+        assert_eq!(
+            parse_css_color("rgba(255, 0, 128, 0.5)"),
+            Some(Rgb {
+                r: 255,
+                g: 0,
+                b: 128
+            })
+        );
+    }
+
+    #[test]
+    fn parse_rejects_garbage() {
+        assert_eq!(parse_css_color(""), None);
+        assert_eq!(parse_css_color("black"), None);
+        assert_eq!(parse_css_color("#gg0000"), None);
+        assert_eq!(parse_css_color("#12"), None);
+    }
+
+    #[test]
+    fn colorref_is_bbggrr() {
+        assert_eq!(
+            to_colorref(Rgb {
+                r: 255,
+                g: 255,
+                b: 255
+            }),
+            0x00FF_FFFF
+        );
+        assert_eq!(
+            to_colorref(Rgb {
+                r: 0x14,
+                g: 0x20,
+                b: 0x30
+            }),
+            0x0030_2014
+        );
+        assert_eq!(
+            to_colorref(Rgb {
+                r: 0xff,
+                g: 0x00,
+                b: 0x00
+            }),
+            0x0000_00FF
+        );
+    }
+
+    #[test]
+    fn resolve_surface_falls_back_by_theme() {
+        assert_eq!(
+            resolve_surface("nope", false),
+            Rgb {
+                r: 255,
+                g: 255,
+                b: 255
+            }
+        );
+        assert_eq!(
+            resolve_surface("nope", true),
+            Rgb {
+                r: 0x14,
+                g: 0x14,
+                b: 0x14
+            }
+        );
+        assert_eq!(
+            resolve_surface("#1677ff", true),
+            Rgb {
+                r: 0x16,
+                g: 0x77,
+                b: 0xff
+            }
+        );
+    }
 }

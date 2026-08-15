@@ -105,6 +105,7 @@ pub fn run() {
             commands::preview_backup,
             commands::delete_backup,
             commands::restore_backup,
+            commands::sync_windows_chrome,
             commands::set_always_on_top,
             commands::minimize_window,
             commands::toggle_maximize_window,

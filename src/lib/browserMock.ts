@@ -441,6 +441,7 @@ export async function handleBrowserCommand<T>(
       };
       return paths as T;
     }
+    case "sync_windows_chrome":
     case "set_always_on_top":
     case "minimize_window":
     case "toggle_maximize_window":

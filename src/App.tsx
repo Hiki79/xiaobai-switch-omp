@@ -11,7 +11,7 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { useSettingsStore, useUIStore, type AppPage } from "@/stores";
 import { useResolvedDarkMode } from "@/hooks/useResolvedDarkMode";
 import { useSiteDeepLink } from "@/hooks/useSiteDeepLink";
-import { isTauri } from "@/lib/invoke";
+import { invoke, isTauri } from "@/lib/invoke";
 import "./i18n";
 
 async function showWindow() {
@@ -80,7 +80,7 @@ function KeepAlivePages({ activePage }: { activePage: AppPage }) {
   );
 }
 
-function AppInner() {
+function AppInner({ isDark }: { isDark: boolean }) {
   const { token } = theme.useToken();
   const { modal, message } = AntdApp.useApp();
   const { i18n } = useTranslation();
@@ -108,6 +108,14 @@ function AppInner() {
     root.style.setProperty("--scrollbar-thumb-hover", token.colorTextTertiary);
     document.body.style.backgroundColor = token.colorBgContainer;
   }, [token]);
+
+  useEffect(() => {
+    if (!isTauri() || !navigator.userAgent.includes("Windows")) return;
+    void invoke("sync_windows_chrome", {
+      dark: isDark,
+      bg: token.colorBgContainer,
+    });
+  }, [isDark, token.colorBgContainer]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -151,7 +159,7 @@ export default function App() {
       }}
     >
       <AntdApp className="h-full">
-        <AppInner />
+        <AppInner isDark={isDark} />
       </AntdApp>
     </ConfigProvider>
   );
