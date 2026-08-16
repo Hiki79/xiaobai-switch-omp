@@ -72,13 +72,20 @@ describe("SitesPage", () => {
       "ant-input-affix-wrapper-sm",
     );
 
-    expect(tag.querySelector(".ant-tag-close-icon")).toBeTruthy();
+    expect(tag.querySelector(".ant-tag-close-icon")).toBeNull();
+    expect(tag.querySelector(".ant-checkbox")).toBeNull();
     expect(tag.style.fontSize).toBe("");
     expect(tag.style.paddingBlock).toBe("");
 
     const addBtn = screen.getByRole("button", { name: "手动添加" });
+    const multiBtn = screen.getByRole("button", { name: "多选" });
+    const clearBtn = screen.getByRole("button", { name: /清\s*空/ });
     expect(addBtn.className).toMatch(/ant-btn-sm/);
+    expect(multiBtn.className).toMatch(/ant-btn-sm/);
+    expect(clearBtn.querySelector("svg.lucide")).toBeTruthy();
     expect(addBtn.compareDocumentPosition(screen.getByText("主模型")) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(addBtn.compareDocumentPosition(multiBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(multiBtn.compareDocumentPosition(clearBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     const applyBtn = screen.getByRole("button", { name: /去 Claude Code 应用|去 Codex 应用/ });
     expect(applyBtn.className).toMatch(/ant-btn-sm/);
@@ -325,12 +332,13 @@ describe("SitesPage", () => {
       </Wrapper>,
     );
 
-    const tag = await waitFor(() => {
-      const el = document.querySelector('.ant-tag[title="gpt-4.1"]');
-      expect(el).toBeTruthy();
-      return el as HTMLElement;
+    await waitFor(() => {
+      expect(document.querySelector('.ant-tag[title="gpt-4.1"]')).toBeTruthy();
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "多选" }));
+
+    const tag = document.querySelector('.ant-tag[title="gpt-4.1"]') as HTMLElement;
     const close = tag.querySelector(".ant-tag-close-icon");
     expect(close).toBeTruthy();
     fireEvent.click(close as Element);
@@ -374,5 +382,90 @@ describe("SitesPage", () => {
     expect(gptModelTag.style.fontSize).toBe("");
     expect(Number.parseFloat(gptCountTag.style.fontSize)).toBeLessThan(12);
     expect(gptGroup.compareDocumentPosition(claudeGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("enables checkboxes and a floating delete bar in multi-select", async () => {
+    await act(async () => {
+      await seedSite();
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    const gptTag = await waitFor(() => {
+      const el = document.querySelector('.ant-tag[title="gpt-4.1"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    const primaryBefore = useSiteStore.getState().sites[0]?.selectedModelId;
+
+    fireEvent.click(screen.getByRole("button", { name: "多选" }));
+    expect(screen.getByRole("button", { name: "完成" })).toBeInTheDocument();
+    expect(gptTag.querySelector(".ant-checkbox")).toBeTruthy();
+    const close = gptTag.querySelector(".ant-tag-close-icon");
+    expect(close).toBeTruthy();
+    expect(close).toHaveClass("model-tag-close");
+    expect(document.querySelector("[data-model-multi-actions]")).toBeNull();
+
+    fireEvent.click(gptTag);
+    const bar = await waitFor(() => {
+      const el = document.querySelector("[data-model-multi-actions]");
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(bar).toHaveTextContent("已选 1 项");
+    expect(bar).toHaveTextContent("删除 1 项");
+    expect(useSiteStore.getState().sites[0]?.selectedModelId).toBe(primaryBefore);
+
+    const claudeTag = document.querySelector('.ant-tag[title="claude-sonnet-4"]') as HTMLElement;
+    const claudeBox = claudeTag.querySelector("input[type='checkbox']") as HTMLInputElement;
+    expect(claudeBox).toBeTruthy();
+    fireEvent.click(claudeBox);
+    expect(bar).toHaveTextContent("已选 2 项");
+    expect(bar).toHaveTextContent("删除 2 项");
+
+    fireEvent.click(within(bar).getByRole("button", { name: /删除/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /确\s*认/ }));
+
+    await waitFor(() => {
+      expect(document.querySelector('.ant-tag[title="gpt-4.1"]')).toBeNull();
+      expect(document.querySelector('.ant-tag[title="claude-sonnet-4"]')).toBeNull();
+    });
+    expect(await screen.findByText("已删除 2 个模型")).toBeInTheDocument();
+    expect(useSiteStore.getState().modelsBySite[useUIStore.getState().selectedSiteId ?? ""]).toEqual(
+      [],
+    );
+  });
+
+  it("exits multi-select and hides tag controls", async () => {
+    await act(async () => {
+      await seedSite();
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    const tag = await waitFor(() => {
+      const el = document.querySelector('.ant-tag[title="gpt-4.1"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "多选" }));
+    fireEvent.click(tag);
+    expect(document.querySelector("[data-model-multi-actions]")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    expect(screen.getByRole("button", { name: "多选" })).toBeInTheDocument();
+    expect(tag.querySelector(".ant-checkbox")).toBeNull();
+    expect(tag.querySelector(".ant-tag-close-icon")).toBeNull();
+    expect(document.querySelector("[data-model-multi-actions]")).toBeNull();
   });
 });

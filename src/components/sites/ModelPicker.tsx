@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { App, Button, Input, Tag, theme } from "antd";
-import { Plus, RefreshCw } from "lucide-react";
+import { App, Button, Checkbox, Input, Tag, theme } from "antd";
+import { CheckSquare, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Site, SiteModel } from "@/types/domain";
 import { useSiteStore } from "@/stores";
@@ -33,6 +33,9 @@ export function ModelPicker({
   const fetching = useSiteStore((s) => s.fetchingModels);
   const [query, setQuery] = useState("");
   const [clearing, setClearing] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [deletingSelected, setDeletingSelected] = useState(false);
   const modelsFromStore = useSiteStore((s) => s.modelsBySite[site.id]);
   const models = modelsFromStore ?? modelsProp;
 
@@ -41,6 +44,29 @@ export function ModelPicker({
     if (site.selectedModelId || models.length === 0) return;
     void setSelectedModel(site.id, models[0].modelId);
   }, [site.id, site.selectedModelId, models, setSelectedModel]);
+
+  useEffect(() => {
+    setSelecting(false);
+    setSelectedIds(new Set());
+  }, [site.id]);
+
+  useEffect(() => {
+    if (models.length === 0) {
+      setSelecting(false);
+      setSelectedIds(new Set());
+      return;
+    }
+    const valid = new Set(models.map((m) => m.modelId));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (valid.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [models]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -76,6 +102,51 @@ export function ModelPicker({
     }
   };
 
+  const toggleSelecting = () => {
+    setSelecting((on) => !on);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelected = (modelId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(modelId)) next.delete(modelId);
+      else next.add(modelId);
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    modal.confirm({
+      title: t("sites.deleteSelectedModelsConfirm", { count: ids.length }),
+      content: t("sites.deleteSelectedModelsHint"),
+      centered: true,
+      okText: t("common.confirm"),
+      cancelText: t("common.cancel"),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setDeletingSelected(true);
+        try {
+          for (const id of ids) {
+            await deleteModel(site.id, id);
+          }
+          setSelectedIds(new Set());
+          message.success(t("sites.deleteSelectedModelsSuccess", { count: ids.length }));
+        } catch (e) {
+          message.error(isAppError(e) ? e.message : String(e));
+          throw e;
+        } finally {
+          setDeletingSelected(false);
+        }
+      },
+    });
+  };
+
+  const selectedCount = selectedIds.size;
+  const showActionBar = selecting && selectedCount > 0;
+
   const handleClear = () => {
     modal.confirm({
       title: t("sites.clearModelsConfirm"),
@@ -100,7 +171,13 @@ export function ModelPicker({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-3">
+    <div
+      className="flex h-full min-h-0 flex-1 flex-col gap-3"
+      style={{
+        ["--model-tag-close-hover" as string]: token.colorFillSecondary,
+        ["--model-tag-close-active" as string]: token.colorFill,
+      }}
+    >
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <span className="text-sm font-medium" style={{ color: token.colorText }}>
           {t("sites.selectModel")}
@@ -117,7 +194,17 @@ export function ModelPicker({
         )}
         <Button
           size="small"
+          type={selecting ? "primary" : "default"}
+          icon={<CheckSquare size={12} />}
+          disabled={models.length === 0}
+          onClick={toggleSelecting}
+        >
+          {selecting ? t("sites.multiSelectModelsDone") : t("sites.multiSelectModels")}
+        </Button>
+        <Button
+          size="small"
           danger
+          icon={<Trash2 size={12} />}
           disabled={models.length === 0}
           loading={clearing}
           onClick={handleClear}
@@ -153,82 +240,136 @@ export function ModelPicker({
         />
       </div>
 
-      <div
-        data-model-list
-        className="scroll-y min-h-0 flex-1"
-        style={{ minHeight: 160 }}
-      >
-        {filtered.length === 0 ? (
-          <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-3 px-4 py-6 text-center">
-            <span className="text-sm" style={{ color: token.colorTextSecondary }}>
-              {models.length === 0 ? t("sites.noModels") : t("sites.noModelsMatch")}
-            </span>
-            {models.length === 0 && (
+      <div className="relative min-h-0 flex-1">
+        <div
+          data-model-list
+          className="scroll-y h-full min-h-0"
+          style={{ minHeight: 160, paddingBottom: showActionBar ? 56 : undefined }}
+        >
+          {filtered.length === 0 ? (
+            <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-3 px-4 py-6 text-center">
+              <span className="text-sm" style={{ color: token.colorTextSecondary }}>
+                {models.length === 0 ? t("sites.noModels") : t("sites.noModelsMatch")}
+              </span>
+              {models.length === 0 && (
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<RefreshCw size={14} />}
+                  loading={fetching}
+                  onClick={() => void handleFetch()}
+                >
+                  {fetching ? t("sites.fetching") : t("sites.fetchModels")}
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {groups.map((group) => (
+                <div key={group.prefix} data-model-group={group.prefix}>
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <span
+                      className="text-xs font-medium"
+                      style={{ color: token.colorTextTertiary }}
+                    >
+                      {group.prefix}
+                    </span>
+                    <Tag
+                      data-model-count
+                      style={{
+                        marginInlineEnd: 0,
+                        fontSize: token.fontSizeSM - 2,
+                        lineHeight: `${token.fontSizeSM + 2}px`,
+                        paddingInline: token.paddingXXS,
+                        paddingBlock: 0,
+                      }}
+                    >
+                      {t("sites.modelCount", { count: group.models.length })}
+                    </Tag>
+                  </div>
+                  <div className="flex flex-wrap content-start gap-2">
+                    {group.models.map((m) => {
+                      const selected = site.selectedModelId === m.modelId;
+                      const picked = selecting && selectedIds.has(m.modelId);
+                      const label = m.displayName || m.modelId;
+                      return (
+                        <Tag
+                          key={m.id || m.modelId}
+                          closable={selecting}
+                          closeIcon={
+                            <span>
+                              <X size={10} strokeWidth={2.25} />
+                            </span>
+                          }
+                          classNames={{ close: "model-tag-close" }}
+                          color={selected ? "processing" : undefined}
+                          style={{
+                            cursor: "pointer",
+                            marginInlineEnd: 0,
+                            borderColor: selected || picked ? token.colorPrimary : undefined,
+                            backgroundColor: picked && !selected ? token.colorPrimaryBg : undefined,
+                            userSelect: "none",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                          onClick={() => {
+                            if (selecting) {
+                              toggleSelected(m.modelId);
+                              return;
+                            }
+                            void setSelectedModel(site.id, m.modelId);
+                          }}
+                          onClose={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleDelete(m.modelId);
+                          }}
+                          title={m.modelId}
+                        >
+                          {selecting && (
+                            <Checkbox
+                              checked={picked}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={() => toggleSelected(m.modelId)}
+                            />
+                          )}
+                          {label}
+                        </Tag>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {showActionBar && (
+          <div
+            data-model-multi-actions
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-2 pb-2"
+          >
+            <div
+              className="pointer-events-auto flex items-center gap-3 rounded-full px-3 py-1.5"
+              style={{
+                backgroundColor: token.colorBgElevated,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                boxShadow: token.boxShadowSecondary,
+              }}
+            >
+              <span className="text-xs" style={{ color: token.colorTextSecondary }}>
+                {t("sites.selectedModelCount", { count: selectedCount })}
+              </span>
               <Button
+                danger
                 type="primary"
                 size="small"
-                icon={<RefreshCw size={14} />}
-                loading={fetching}
-                onClick={() => void handleFetch()}
+                loading={deletingSelected}
+                onClick={handleDeleteSelected}
               >
-                {fetching ? t("sites.fetching") : t("sites.fetchModels")}
+                {t("sites.deleteSelectedModels", { count: selectedCount })}
               </Button>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {groups.map((group) => (
-              <div key={group.prefix} data-model-group={group.prefix}>
-                <div className="mb-1.5 flex items-center gap-1.5">
-                  <span
-                    className="text-xs font-medium"
-                    style={{ color: token.colorTextTertiary }}
-                  >
-                    {group.prefix}
-                  </span>
-                  <Tag
-                    data-model-count
-                    style={{
-                      marginInlineEnd: 0,
-                      fontSize: token.fontSizeSM - 2,
-                      lineHeight: `${token.fontSizeSM + 2}px`,
-                      paddingInline: token.paddingXXS,
-                      paddingBlock: 0,
-                    }}
-                  >
-                    {t("sites.modelCount", { count: group.models.length })}
-                  </Tag>
-                </div>
-                <div className="flex flex-wrap content-start gap-2">
-                  {group.models.map((m) => {
-                    const selected = site.selectedModelId === m.modelId;
-                    const label = m.displayName || m.modelId;
-                    return (
-                      <Tag
-                        key={m.id || m.modelId}
-                        closable
-                        color={selected ? "processing" : undefined}
-                        style={{
-                          cursor: "pointer",
-                          marginInlineEnd: 0,
-                          borderColor: selected ? token.colorPrimary : undefined,
-                          userSelect: "none",
-                        }}
-                        onClick={() => void setSelectedModel(site.id, m.modelId)}
-                        onClose={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void handleDelete(m.modelId);
-                        }}
-                        title={m.modelId}
-                      >
-                        {label}
-                      </Tag>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+            </div>
           </div>
         )}
       </div>
