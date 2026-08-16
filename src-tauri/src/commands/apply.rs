@@ -21,6 +21,7 @@ fn non_empty(s: Option<String>) -> Option<String> {
 
 #[tauri::command]
 pub fn apply_site(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     site_id: String,
     targets: Vec<TargetKind>,
@@ -275,12 +276,14 @@ pub fn apply_site(
         );
     }
 
-    Ok(ApplyResult {
+    let result = ApplyResult {
         site_id,
         model_id,
         results,
         applied_at,
-    })
+    };
+    crate::tray::request_tray_menu_sync(&app);
+    Ok(result)
 }
 
 pub(crate) fn finalize_backup_dir(
@@ -330,7 +333,11 @@ pub(crate) fn finalize_backup_dir(
 }
 
 #[tauri::command]
-pub fn revert_target(state: State<'_, AppState>, target: TargetKind) -> AppResult<()> {
+pub fn revert_target(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    target: TargetKind,
+) -> AppResult<()> {
     let _lock = try_lock_target(target.as_str())?;
     let settings = state.db.with_conn(repo::settings::get_settings)?;
     let binding = state
@@ -358,6 +365,7 @@ pub fn revert_target(state: State<'_, AppState>, target: TargetKind) -> AppResul
     state
         .db
         .with_conn(|c| repo::binding::delete_binding(c, target))?;
+    crate::tray::request_tray_menu_sync(&app);
     Ok(())
 }
 
@@ -407,10 +415,15 @@ pub fn delete_backup(id: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn restore_backup(state: State<'_, AppState>, id: String) -> AppResult<()> {
+pub fn restore_backup(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<()> {
     let (target, _) = backup::parse_backup_id(&id)?;
     let _lock = try_lock_target(target.as_str())?;
     let settings = state.db.with_conn(repo::settings::get_settings)?;
     backup::restore_backup_in(&backups_dir()?, &id, &settings, None)?;
+    crate::tray::request_tray_menu_sync(&app);
     Ok(())
 }

@@ -29,7 +29,7 @@ pub async fn list_target_status(
     list_target_status_with_tools(&state, &tools)
 }
 
-fn list_target_status_with_tools(
+pub(crate) fn list_target_status_with_tools(
     state: &AppState,
     tools: &[CliToolInfo],
 ) -> AppResult<Vec<TargetLiveStatus>> {
@@ -121,7 +121,7 @@ pub async fn detect_cli_tools(force: Option<bool>) -> AppResult<Vec<CliToolInfo>
         .map_err(|e| AppError::new("internal", e.to_string()))
 }
 
-fn detect_cli_tools_cached(force: bool) -> Vec<CliToolInfo> {
+pub(crate) fn detect_cli_tools_cached(force: bool) -> Vec<CliToolInfo> {
     if !force {
         if let Some(cached) = CLI_PROBE_CACHE.lock().as_ref() {
             if cached.at.elapsed() < CLI_PROBE_TTL {
@@ -184,7 +184,11 @@ fn which(bin: &str) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn cleanup_orphan_target(state: State<'_, AppState>, target: TargetKind) -> AppResult<()> {
+pub fn cleanup_orphan_target(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    target: TargetKind,
+) -> AppResult<()> {
     let settings = state.db.with_conn(repo::settings::get_settings)?;
     let binding = state
         .db
@@ -210,6 +214,7 @@ pub fn cleanup_orphan_target(state: State<'_, AppState>, target: TargetKind) -> 
         state
             .db
             .with_conn(|c| repo::binding::delete_binding(c, target))?;
+        crate::tray::request_tray_menu_sync(&app);
     }
     Ok(())
 }

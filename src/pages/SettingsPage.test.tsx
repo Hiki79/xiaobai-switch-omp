@@ -68,6 +68,48 @@ describe("SettingsPage network", () => {
   });
 });
 
+describe("SettingsPage tray", () => {
+  beforeEach(() => {
+    resetBrowserMock();
+    useUIStore.setState({ settingsTab: "general" });
+    useSettingsStore.setState({
+      settings: useSettingsStore.getState().settings,
+      loaded: false,
+      loading: false,
+    });
+  });
+
+  afterEach(() => {
+    resetBrowserMock();
+    useUIStore.setState({ settingsTab: "general" });
+  });
+
+  it("shows close-to-tray and disables start-in-tray when close-to-tray is off", async () => {
+    render(
+      <Wrapper>
+        <SettingsPage />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("关闭窗口时最小化到托盘")).toBeInTheDocument();
+    });
+    expect(useSettingsStore.getState().settings.closeToTray).toBe(true);
+
+    const switches = screen.getAllByRole("switch");
+    const closeToTray = switches[2];
+    const startInTray = switches[3];
+    expect(startInTray).not.toBeDisabled();
+
+    fireEvent.click(closeToTray);
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.closeToTray).toBe(false);
+    });
+    expect(useSettingsStore.getState().settings.startInTray).toBe(false);
+    expect(startInTray).toBeDisabled();
+  });
+});
+
 describe("SettingsPage about", () => {
   beforeEach(() => {
     resetBrowserMock();

@@ -246,6 +246,23 @@ pub fn take_pending_deep_link() -> AppResult<Option<String>> {
 }
 
 #[tauri::command]
+pub fn restore_main_window(app: tauri::AppHandle) -> AppResult<()> {
+    crate::window_lifecycle::restore_main_window(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn force_quit(app: tauri::AppHandle) -> AppResult<()> {
+    crate::window_lifecycle::request_quit(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn refresh_tray_menu(app: tauri::AppHandle) -> Result<(), String> {
+    crate::tray::sync_tray_menu(&app).await
+}
+
+#[tauri::command]
 pub fn open_url(url: String) -> AppResult<()> {
     tauri_plugin_opener::open_url(&url, None::<&str>)
         .map_err(|e| crate::error::AppError::new("internal", e.to_string()))?;

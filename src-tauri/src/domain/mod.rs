@@ -328,6 +328,12 @@ pub struct AppSettings {
     pub proxy_port: Option<u16>,
     #[serde(default = "default_route_probe_ttl")]
     pub route_probe_ttl_minutes: u32,
+    /// Hide the main window instead of quitting when the user closes it.
+    #[serde(default = "default_true")]
+    pub close_to_tray: bool,
+    /// Keep the main window hidden on launch (only meaningful with close_to_tray).
+    #[serde(default)]
+    pub start_in_tray: bool,
 }
 
 pub fn default_max_backup_copies() -> u32 {
@@ -352,6 +358,10 @@ pub fn default_route_probe_ttl() -> u32 {
 
 pub fn clamp_route_probe_ttl(n: u32) -> u32 {
     n.clamp(1, 1440)
+}
+
+pub fn default_true() -> bool {
+    true
 }
 
 pub fn normalize_proxy_mode(s: &str) -> String {
@@ -387,6 +397,8 @@ impl Default for AppSettings {
             proxy_host: None,
             proxy_port: None,
             route_probe_ttl_minutes: default_route_probe_ttl(),
+            close_to_tray: true,
+            start_in_tray: false,
         }
     }
 }

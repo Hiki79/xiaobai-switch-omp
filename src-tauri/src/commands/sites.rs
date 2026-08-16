@@ -22,23 +22,32 @@ pub fn get_site(state: State<'_, AppState>, id: String) -> AppResult<SiteDto> {
 }
 
 #[tauri::command]
-pub fn create_site(state: State<'_, AppState>, input: CreateSiteInput) -> AppResult<SiteDto> {
+pub fn create_site(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    input: CreateSiteInput,
+) -> AppResult<SiteDto> {
     let row = state
         .db
         .with_conn(|c| repo::site::create_site(c, &state.crypto, input))?;
+    crate::tray::request_tray_menu_sync(&app);
     Ok(row.to_dto())
 }
 
 #[tauri::command]
 pub fn import_site_from_deep_link(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     input: DeepLinkSiteImportInput,
 ) -> AppResult<DeepLinkSiteImportResult> {
-    crate::deep_link::import_site_from_deep_link(&state, input)
+    let result = crate::deep_link::import_site_from_deep_link(&state, input)?;
+    crate::tray::request_tray_menu_sync(&app);
+    Ok(result)
 }
 
 #[tauri::command]
 pub fn update_site(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: String,
     input: UpdateSiteInput,
@@ -50,21 +59,27 @@ pub fn update_site(
     if before.base_url != row.base_url {
         let _ = crate::route_switch::sync_applied_urls(&state, &row);
     }
+    crate::tray::request_tray_menu_sync(&app);
     Ok(row.to_dto())
 }
 
 #[tauri::command]
 pub fn switch_site_route(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     site_id: String,
     base_url: String,
     apply: Option<bool>,
 ) -> AppResult<SwitchRouteResult> {
-    crate::route_switch::switch_site_route(&state, &site_id, &base_url, apply.unwrap_or(true))
+    let result =
+        crate::route_switch::switch_site_route(&state, &site_id, &base_url, apply.unwrap_or(true))?;
+    crate::tray::request_tray_menu_sync(&app);
+    Ok(result)
 }
 
 #[tauri::command]
 pub fn delete_site(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: String,
     cleanup_targets: Option<bool>,
@@ -104,11 +119,17 @@ pub fn delete_site(
             .with_conn(|c| repo::binding::orphan_bindings_for_site(c, &id))?;
     }
 
-    state.db.with_conn(|c| repo::site::delete_site(c, &id))
+    state.db.with_conn(|c| repo::site::delete_site(c, &id))?;
+    crate::tray::request_tray_menu_sync(&app);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn reorder_sites(state: State<'_, AppState>, ids: Vec<String>) -> AppResult<()> {
+pub fn reorder_sites(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+) -> AppResult<()> {
     state.db.with_conn(|c| {
         for (i, id) in ids.iter().enumerate() {
             c.execute(
@@ -117,16 +138,21 @@ pub fn reorder_sites(state: State<'_, AppState>, ids: Vec<String>) -> AppResult<
             )?;
         }
         Ok(())
-    })
+    })?;
+    crate::tray::request_tray_menu_sync(&app);
+    Ok(())
 }
 
 #[tauri::command]
 pub fn set_selected_model(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     site_id: String,
     model_id: String,
 ) -> AppResult<()> {
     state
         .db
-        .with_conn(|c| repo::site::set_selected_model(c, &site_id, &model_id))
+        .with_conn(|c| repo::site::set_selected_model(c, &site_id, &model_id))?;
+    crate::tray::request_tray_menu_sync(&app);
+    Ok(())
 }

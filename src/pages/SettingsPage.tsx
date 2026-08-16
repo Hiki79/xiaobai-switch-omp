@@ -21,6 +21,7 @@ const rowStyle: React.CSSProperties = { padding: "4px 0" };
 
 function GeneralSection() {
   const { t, i18n } = useTranslation();
+  const { token } = theme.useToken();
   const settings = useSettingsStore((s) => s.settings);
   const saveSettings = useSettingsStore((s) => s.saveSettings);
 
@@ -74,6 +75,33 @@ function GeneralSection() {
         <div style={rowStyle} className="flex items-center justify-between">
           <span>{t("settings.autoStart")}</span>
           <Switch checked={settings.autoStart} onChange={(autoStart) => void patch({ autoStart })} />
+        </div>
+        <Divider style={{ margin: "8px 0" }} />
+        <div style={rowStyle} className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div>{t("settings.closeToTray")}</div>
+            <div className="text-xs" style={{ color: token.colorTextSecondary }}>
+              {t("settings.closeToTrayHint")}
+            </div>
+          </div>
+          <Switch
+            checked={settings.closeToTray}
+            onChange={(closeToTray) => void patch({ closeToTray })}
+          />
+        </div>
+        <Divider style={{ margin: "8px 0" }} />
+        <div style={rowStyle} className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div>{t("settings.startInTray")}</div>
+            <div className="text-xs" style={{ color: token.colorTextSecondary }}>
+              {settings.closeToTray ? t("settings.startInTrayHint") : t("settings.startInTrayDisabled")}
+            </div>
+          </div>
+          <Switch
+            checked={settings.startInTray}
+            disabled={!settings.closeToTray}
+            onChange={(startInTray) => void patch({ startInTray })}
+          />
         </div>
       </SettingsGroup>
 

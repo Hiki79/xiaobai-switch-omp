@@ -11,6 +11,7 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { useSettingsStore, useUIStore, type AppPage } from "@/stores";
 import { useResolvedDarkMode } from "@/hooks/useResolvedDarkMode";
 import { useSiteDeepLink } from "@/hooks/useSiteDeepLink";
+import { useTrayEvents } from "@/hooks/useTrayEvents";
 import { invoke, isTauri } from "@/lib/invoke";
 import "./i18n";
 
@@ -88,12 +89,16 @@ function AppInner({ isDark }: { isDark: boolean }) {
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
   const rootRef = useRef<HTMLDivElement>(null);
   useSiteDeepLink({ modal, message });
+  useTrayEvents();
 
   useEffect(() => {
-    void fetchSettings().then(() => {
-      const lang = useSettingsStore.getState().settings.language;
-      if (lang) void i18n.changeLanguage(lang);
-    });
+    void fetchSettings()
+      .catch(() => undefined)
+      .then(() => {
+        const { language, startInTray } = useSettingsStore.getState().settings;
+        if (language) void i18n.changeLanguage(language);
+        if (isTauri() && !startInTray) void showWindow();
+      });
   }, [fetchSettings, i18n]);
 
   useEffect(() => {
@@ -116,11 +121,6 @@ function AppInner({ isDark }: { isDark: boolean }) {
       bg: token.colorBgContainer,
     });
   }, [isDark, token.colorBgContainer]);
-
-  useEffect(() => {
-    if (!isTauri()) return;
-    void showWindow();
-  }, []);
 
   return (
     <div ref={rootRef} className="flex h-full flex-col">

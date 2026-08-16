@@ -3,6 +3,7 @@ use crate::error::AppResult;
 use crate::paths::app_paths_dto;
 use crate::repo;
 use crate::state::AppState;
+use std::sync::atomic::Ordering;
 use tauri::State;
 
 #[tauri::command]
@@ -12,12 +13,20 @@ pub fn get_settings(state: State<'_, AppState>) -> AppResult<AppSettings> {
 
 #[tauri::command]
 pub fn save_settings(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     partial: serde_json::Value,
 ) -> AppResult<AppSettings> {
     let merged = state
         .db
         .with_conn(|c| repo::settings::merge_settings(c, partial))?;
+    state
+        .close_to_tray
+        .store(merged.close_to_tray, Ordering::Relaxed);
+    state
+        .start_in_tray
+        .store(merged.start_in_tray, Ordering::Relaxed);
+    crate::tray::request_tray_menu_sync(&app);
     let _ = crate::backup::prune_all(merged.max_backup_copies);
     Ok(merged)
 }

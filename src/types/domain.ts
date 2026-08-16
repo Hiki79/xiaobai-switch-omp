@@ -181,6 +181,10 @@ export interface AppSettings {
   proxyHost: string | null;
   proxyPort: number | null;
   routeProbeTtlMinutes: number;
+  /** Hide to the menu bar / tray instead of quitting on window close. */
+  closeToTray: boolean;
+  /** Keep the main window hidden on launch. Disabled when closeToTray is off. */
+  startInTray: boolean;
 }
 
 export interface SwitchRouteResult {

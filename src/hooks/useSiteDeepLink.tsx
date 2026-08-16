@@ -191,14 +191,10 @@ export function useSiteDeepLink({ modal, message }: { modal: ModalLike; message:
     const setup = async () => {
       try {
         const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
-        const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
         const pending = await invoke<string | null>("take_pending_deep_link");
         handleUrls([...(await getCurrent() ?? []), ...(pending ? [pending] : [])]);
         const stopPlugin = await onOpenUrl((urls) => {
-          void getCurrentWebviewWindow()
-            .show()
-            .then(() => getCurrentWebviewWindow().setFocus())
-            .catch(() => undefined);
+          void invoke("restore_main_window").catch(() => undefined);
           handleUrls(urls);
         });
         const poll = window.setInterval(() => {

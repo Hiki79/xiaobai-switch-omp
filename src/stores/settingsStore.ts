@@ -19,6 +19,8 @@ const DEFAULT: AppSettings = {
   proxyHost: null,
   proxyPort: null,
   routeProbeTtlMinutes: 10,
+  closeToTray: true,
+  startInTray: false,
 };
 
 interface SettingsState {

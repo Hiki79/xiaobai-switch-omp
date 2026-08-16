@@ -18,6 +18,9 @@ fn normalize(mut s: AppSettings) -> AppSettings {
             Some(trimmed)
         };
     }
+    if !s.close_to_tray {
+        s.start_in_tray = false;
+    }
     s
 }
 
@@ -83,6 +86,20 @@ mod tests {
         assert_eq!(s.proxy_protocol, "http");
         assert_eq!(s.route_probe_ttl_minutes, 10);
         assert_eq!(s.language, "en-US");
+        assert!(s.close_to_tray);
+        assert!(!s.start_in_tray);
+    }
+
+    #[test]
+    fn start_in_tray_requires_close_to_tray() {
+        let conn = conn();
+        let merged = merge_settings(
+            &conn,
+            serde_json::json!({ "closeToTray": false, "startInTray": true }),
+        )
+        .unwrap();
+        assert!(!merged.close_to_tray);
+        assert!(!merged.start_in_tray);
     }
 
     #[test]

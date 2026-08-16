@@ -16,18 +16,14 @@ mod redact;
 mod repo;
 mod route_switch;
 mod state;
+mod tray;
+mod tray_apply;
 mod url_normalize;
+mod window_lifecycle;
 
 use state::AppState;
+use std::sync::atomic::Ordering;
 use tauri::Manager;
-
-fn focus_main_window(app: &tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.show();
-        let _ = win.unminimize();
-        let _ = win.set_focus();
-    }
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -39,7 +35,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            focus_main_window(app);
+            window_lifecycle::restore_main_window(app);
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
@@ -57,8 +53,27 @@ pub fn run() {
                     e
                 })
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            let language = state
+                .db
+                .with_conn(repo::settings::get_settings)
+                .map(|s| s.language)
+                .unwrap_or_else(|_| "zh-CN".into());
+            let start_in_tray = state.start_in_tray.load(Ordering::Relaxed);
             app.manage(state);
             commands::apply_platform_window_chrome(app);
+            if let Err(e) = tray::create_tray(app.handle(), &language) {
+                tracing::warn!("failed to create system tray: {e}");
+                app.state::<AppState>()
+                    .close_to_tray
+                    .store(false, Ordering::Relaxed);
+            }
+            if start_in_tray {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = window_lifecycle::hide_webview_window_to_tray(&w);
+                }
+            } else {
+                window_lifecycle::reveal_app_in_dock(app.handle());
+            }
             #[cfg(any(windows, target_os = "linux"))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
@@ -115,7 +130,45 @@ pub fn run() {
             commands::fetch_http_bytes,
             commands::probe_urls,
             commands::take_pending_deep_link,
+            commands::restore_main_window,
+            commands::force_quit,
+            commands::refresh_tray_menu,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running XiaoBaiSwitch");
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window_lifecycle::should_close_to_tray(window.app_handle()) {
+                    let _ = window_lifecycle::hide_main_window_to_tray(window);
+                    api.prevent_close();
+                }
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while building XiaoBaiSwitch")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+                let state = app.state::<AppState>();
+                if state.close_to_tray.load(Ordering::Relaxed)
+                    && !state.is_quitting.load(Ordering::Relaxed)
+                    && app
+                        .get_webview_window("main")
+                        .map(|w| !w.is_visible().unwrap_or(true))
+                        .unwrap_or(false)
+                {
+                    api.prevent_exit();
+                }
+            }
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } = event
+            {
+                if !has_visible_windows {
+                    window_lifecycle::restore_main_window(app);
+                }
+            }
+        });
 }

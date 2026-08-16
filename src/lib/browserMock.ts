@@ -37,6 +37,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   proxyHost: null,
   proxyPort: null,
   routeProbeTtlMinutes: 10,
+  closeToTray: true,
+  startInTray: false,
 };
 
 let settings: AppSettings = { ...DEFAULT_SETTINGS };
@@ -77,8 +79,13 @@ export async function handleBrowserCommand<T>(
     case "save_settings": {
       const partial = (args?.partial ?? {}) as Partial<AppSettings>;
       settings = { ...settings, ...partial };
+      if (!settings.closeToTray) settings.startInTray = false;
       return settings as T;
     }
+    case "restore_main_window":
+    case "force_quit":
+    case "refresh_tray_menu":
+      return undefined as T;
     case "list_sites":
       return sites as T;
     case "get_site": {
