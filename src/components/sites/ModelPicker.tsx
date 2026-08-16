@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { App, Button, Checkbox, Input, Tag, theme } from "antd";
-import { CheckSquare, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { App, Button, Checkbox, Input, theme } from "antd";
+import { CheckSquare, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Site, SiteModel } from "@/types/domain";
 import { useSiteStore } from "@/stores";
 import { isAppError } from "@/lib/invoke";
 import { groupModelsByPrefix } from "@/lib/modelPrefix";
+import { ModelCountBadge, ModelTag } from "@/components/sites/ModelTag";
 
 interface Props {
   site: Site;
@@ -174,8 +175,21 @@ export function ModelPicker({
     <div
       className="flex h-full min-h-0 flex-1 flex-col gap-3"
       style={{
+        ["--model-tag-bg" as string]: token.colorFillTertiary,
+        ["--model-tag-bg-hover" as string]: token.colorFillSecondary,
+        ["--model-tag-border" as string]: token.colorBorderSecondary,
+        ["--model-tag-border-hover" as string]: token.colorBorder,
+        ["--model-tag-fg" as string]: token.colorText,
+        ["--model-tag-selected-bg" as string]: token.colorPrimaryBg,
+        ["--model-tag-selected-bg-hover" as string]: token.colorPrimaryBgHover,
+        ["--model-tag-selected-border" as string]: token.colorPrimary,
+        ["--model-tag-selected-border-hover" as string]: token.colorPrimaryHover,
+        ["--model-tag-selected-fg" as string]: token.colorPrimary,
         ["--model-tag-close-hover" as string]: token.colorFillSecondary,
         ["--model-tag-close-active" as string]: token.colorFill,
+        ["--model-count-bg" as string]: token.colorFillTertiary,
+        ["--model-count-border" as string]: token.colorBorderSecondary,
+        ["--model-count-fg" as string]: token.colorTextSecondary,
       }}
     >
       <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -274,18 +288,9 @@ export function ModelPicker({
                     >
                       {group.prefix}
                     </span>
-                    <Tag
-                      data-model-count
-                      style={{
-                        marginInlineEnd: 0,
-                        fontSize: token.fontSizeSM - 2,
-                        lineHeight: `${token.fontSizeSM + 2}px`,
-                        paddingInline: token.paddingXXS,
-                        paddingBlock: 0,
-                      }}
-                    >
+                    <ModelCountBadge>
                       {t("sites.modelCount", { count: group.models.length })}
-                    </Tag>
+                    </ModelCountBadge>
                   </div>
                   <div className="flex flex-wrap content-start gap-2">
                     {group.models.map((m) => {
@@ -293,26 +298,12 @@ export function ModelPicker({
                       const picked = selecting && selectedIds.has(m.modelId);
                       const label = m.displayName || m.modelId;
                       return (
-                        <Tag
+                        <ModelTag
                           key={m.id || m.modelId}
+                          title={m.modelId}
+                          selected={selected}
+                          picked={picked}
                           closable={selecting}
-                          closeIcon={
-                            <span>
-                              <X size={10} strokeWidth={2.25} />
-                            </span>
-                          }
-                          classNames={{ close: "model-tag-close" }}
-                          color={selected ? "processing" : undefined}
-                          style={{
-                            cursor: "pointer",
-                            marginInlineEnd: 0,
-                            borderColor: selected || picked ? token.colorPrimary : undefined,
-                            backgroundColor: picked && !selected ? token.colorPrimaryBg : undefined,
-                            userSelect: "none",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                          }}
                           onClick={() => {
                             if (selecting) {
                               toggleSelected(m.modelId);
@@ -320,12 +311,9 @@ export function ModelPicker({
                             }
                             void setSelectedModel(site.id, m.modelId);
                           }}
-                          onClose={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
+                          onClose={() => {
                             void handleDelete(m.modelId);
                           }}
-                          title={m.modelId}
                         >
                           {selecting && (
                             <Checkbox
@@ -335,7 +323,7 @@ export function ModelPicker({
                             />
                           )}
                           {label}
-                        </Tag>
+                        </ModelTag>
                       );
                     })}
                   </div>

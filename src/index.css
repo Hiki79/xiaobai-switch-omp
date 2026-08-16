@@ -69,15 +69,63 @@ svg.lucide {
   vertical-align: -0.125em;
 }
 
-.ant-tag .model-tag-close.ant-tag-close-icon {
+.model-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 8px;
+  font-size: 12px;
+  line-height: 20px;
+  border: 1px solid var(--model-tag-border);
+  border-radius: 6px;
+  background: var(--model-tag-bg);
+  color: var(--model-tag-fg);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.model-tag:hover {
+  background: var(--model-tag-bg-hover);
+  border-color: var(--model-tag-border-hover);
+}
+
+.model-tag:focus-visible {
+  outline: 2px solid var(--color-primary, currentColor);
+  outline-offset: 1px;
+}
+
+.model-tag[data-selected="true"],
+.model-tag[data-picked="true"] {
+  background: var(--model-tag-selected-bg);
+  border-color: var(--model-tag-selected-border);
+  color: var(--model-tag-selected-fg);
+}
+
+.model-tag[data-selected="true"]:hover,
+.model-tag[data-picked="true"]:hover {
+  background: var(--model-tag-selected-bg-hover);
+  border-color: var(--model-tag-selected-border-hover);
+}
+
+.model-tag-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 18px;
   height: 18px;
+  margin: 0;
   margin-inline-start: 2px;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
+  background: transparent;
   color: inherit;
+  cursor: pointer;
   opacity: 0.72;
   transition:
     background-color 120ms ease,
@@ -85,19 +133,30 @@ svg.lucide {
     color 120ms ease;
 }
 
-.ant-tag .model-tag-close.ant-tag-close-icon svg.lucide {
+.model-tag-close svg.lucide {
   display: block;
   vertical-align: 0;
 }
 
-.ant-tag .model-tag-close.ant-tag-close-icon:hover {
+.model-tag-close:hover {
   background-color: var(--model-tag-close-hover, rgba(0, 0, 0, 0.08));
   color: inherit;
   opacity: 1;
 }
 
-.ant-tag .model-tag-close.ant-tag-close-icon:active {
+.model-tag-close:active {
   background-color: var(--model-tag-close-active, rgba(0, 0, 0, 0.15));
+}
+
+.model-count-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--model-count-border);
+  border-radius: 4px;
+  background: var(--model-count-bg);
+  color: var(--model-count-fg);
+  line-height: 1.2;
+  padding-block: 0;
 }
 
 .ant-menu {
@@ -236,6 +295,11 @@ svg.lucide {
   }
 
   .route-option {
+    transition: none;
+  }
+
+  .model-tag,
+  .model-tag-close {
     transition: none;
   }
 }

@@ -16,6 +16,10 @@ function Wrapper({ children }: { children: ReactNode }) {
   );
 }
 
+function modelTag(modelId: string) {
+  return document.querySelector(`[data-model-tag][title="${modelId}"]`);
+}
+
 async function seedSite() {
   const site = await useSiteStore.getState().createSite({
     name: "Relay One",
@@ -68,7 +72,7 @@ describe("SitesPage", () => {
     );
 
     const tag = await waitFor(() => {
-      const el = document.querySelector('.ant-tag[title="gpt-4.1"]');
+      const el = modelTag("gpt-4.1");
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
@@ -83,8 +87,10 @@ describe("SitesPage", () => {
       "ant-input-affix-wrapper-sm",
     );
 
-    expect(tag.querySelector(".ant-tag-close-icon")).toBeNull();
+    expect(tag.querySelector("[data-model-tag-close]")).toBeNull();
     expect(tag.querySelector(".ant-checkbox")).toBeNull();
+    expect(tag).toHaveClass("model-tag");
+    expect(tag).toHaveAttribute("data-selected", "true");
     expect(tag.style.fontSize).toBe("");
     expect(tag.style.paddingBlock).toBe("");
 
@@ -131,7 +137,7 @@ describe("SitesPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: /保\s*存/ }));
 
     await waitFor(() => {
-      expect(document.querySelector('.ant-tag[title="gpt-5.6-terra"]')).toBeTruthy();
+      expect(modelTag("gpt-5.6-terra")).toBeTruthy();
     });
     expect(useSiteStore.getState().sites[0]?.selectedModelId).toBe("gpt-5.6-terra");
   });
@@ -181,7 +187,7 @@ describe("SitesPage", () => {
 
     fireEvent.click(fetchInEmpty as HTMLButtonElement);
     await waitFor(() => {
-      expect(document.querySelector(".ant-tag")).toBeTruthy();
+      expect(document.querySelector("[data-model-tag]")).toBeTruthy();
     });
     const toasts = await screen.findAllByText("同步模型成功，本次同步 2 个模型");
     expect(toasts).toHaveLength(1);
@@ -218,7 +224,7 @@ describe("SitesPage", () => {
     );
 
     await waitFor(() => {
-      expect(document.querySelector('.ant-tag[title="gpt-4.1"]')).toBeTruthy();
+      expect(modelTag("gpt-4.1")).toBeTruthy();
     });
 
     const addBtn = screen.getByRole("button", { name: "手动添加" });
@@ -231,7 +237,7 @@ describe("SitesPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: /确\s*认/ }));
 
     await waitFor(() => {
-      expect(document.querySelector(".ant-tag")).toBeNull();
+      expect(document.querySelector("[data-model-tag]")).toBeNull();
     });
     expect(await screen.findByText("清空模型成功")).toBeInTheDocument();
     expect(screen.queryByText("成功")).toBeNull();
@@ -347,18 +353,18 @@ describe("SitesPage", () => {
     );
 
     await waitFor(() => {
-      expect(document.querySelector('.ant-tag[title="gpt-4.1"]')).toBeTruthy();
+      expect(modelTag("gpt-4.1")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "多选" }));
 
-    const tag = document.querySelector('.ant-tag[title="gpt-4.1"]') as HTMLElement;
-    const close = tag.querySelector(".ant-tag-close-icon");
+    const tag = modelTag("gpt-4.1") as HTMLElement;
+    const close = tag.querySelector("[data-model-tag-close]");
     expect(close).toBeTruthy();
     fireEvent.click(close as Element);
 
     await waitFor(() => {
-      expect(document.querySelector('.ant-tag[title="gpt-4.1"]')).toBeNull();
+      expect(modelTag("gpt-4.1")).toBeNull();
     });
     expect(
       useSiteStore.getState().modelsBySite[useUIStore.getState().selectedSiteId ?? ""]?.some(
@@ -386,10 +392,10 @@ describe("SitesPage", () => {
     const claudeGroup = document.querySelector('[data-model-group="claude"]') as HTMLElement;
     expect(claudeGroup).toBeTruthy();
 
-    const gptModelTag = gptGroup.querySelector('.ant-tag[title="gpt-4.1"]') as HTMLElement;
+    const gptModelTag = gptGroup.querySelector('[data-model-tag][title="gpt-4.1"]') as HTMLElement;
     const gptCountTag = gptGroup.querySelector("[data-model-count]") as HTMLElement;
     expect(gptModelTag).toBeTruthy();
-    expect(claudeGroup.querySelector('.ant-tag[title="claude-sonnet-4"]')).toBeTruthy();
+    expect(claudeGroup.querySelector('[data-model-tag][title="claude-sonnet-4"]')).toBeTruthy();
     expect(gptCountTag).toBeTruthy();
     expect(gptGroup).toHaveTextContent("1 个模型");
     expect(claudeGroup).toHaveTextContent("1 个模型");
@@ -410,7 +416,7 @@ describe("SitesPage", () => {
     );
 
     const gptTag = await waitFor(() => {
-      const el = document.querySelector('.ant-tag[title="gpt-4.1"]');
+      const el = modelTag("gpt-4.1");
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
@@ -419,7 +425,7 @@ describe("SitesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "多选" }));
     expect(screen.getByRole("button", { name: "完成" })).toBeInTheDocument();
     expect(gptTag.querySelector(".ant-checkbox")).toBeTruthy();
-    const close = gptTag.querySelector(".ant-tag-close-icon");
+    const close = gptTag.querySelector("[data-model-tag-close]");
     expect(close).toBeTruthy();
     expect(close).toHaveClass("model-tag-close");
     expect(document.querySelector("[data-model-multi-actions]")).toBeNull();
@@ -434,7 +440,7 @@ describe("SitesPage", () => {
     expect(bar).toHaveTextContent("删除 1 项");
     expect(useSiteStore.getState().sites[0]?.selectedModelId).toBe(primaryBefore);
 
-    const claudeTag = document.querySelector('.ant-tag[title="claude-sonnet-4"]') as HTMLElement;
+    const claudeTag = modelTag("claude-sonnet-4") as HTMLElement;
     const claudeBox = claudeTag.querySelector("input[type='checkbox']") as HTMLInputElement;
     expect(claudeBox).toBeTruthy();
     fireEvent.click(claudeBox);
@@ -446,8 +452,8 @@ describe("SitesPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: /确\s*认/ }));
 
     await waitFor(() => {
-      expect(document.querySelector('.ant-tag[title="gpt-4.1"]')).toBeNull();
-      expect(document.querySelector('.ant-tag[title="claude-sonnet-4"]')).toBeNull();
+      expect(modelTag("gpt-4.1")).toBeNull();
+      expect(modelTag("claude-sonnet-4")).toBeNull();
     });
     expect(await screen.findByText("已删除 2 个模型")).toBeInTheDocument();
     expect(useSiteStore.getState().modelsBySite[useUIStore.getState().selectedSiteId ?? ""]).toEqual(
@@ -467,7 +473,7 @@ describe("SitesPage", () => {
     );
 
     const tag = await waitFor(() => {
-      const el = document.querySelector('.ant-tag[title="gpt-4.1"]');
+      const el = modelTag("gpt-4.1");
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
@@ -479,7 +485,7 @@ describe("SitesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
     expect(screen.getByRole("button", { name: "多选" })).toBeInTheDocument();
     expect(tag.querySelector(".ant-checkbox")).toBeNull();
-    expect(tag.querySelector(".ant-tag-close-icon")).toBeNull();
+    expect(tag.querySelector("[data-model-tag-close]")).toBeNull();
     expect(document.querySelector("[data-model-multi-actions]")).toBeNull();
   });
 
