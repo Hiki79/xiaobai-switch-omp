@@ -220,6 +220,8 @@
     "themeDark": "Dark",
     "alwaysOnTop": "Always on top",
     "autoStart": "Launch at login",
+    "autoStartFailed": "Could not register launch at login. Check system permissions and try again.",
+    "saveFailed": "Could not save settings",
     "closeToTray": "Minimize to tray on close",
     "closeToTrayHint": "Closing the window keeps the app running in the menu bar / tray. Choose Quit from the tray to exit.",
     "startInTray": "Start hidden in tray",

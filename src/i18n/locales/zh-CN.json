@@ -220,6 +220,8 @@
     "themeDark": "深色",
     "alwaysOnTop": "窗口置顶",
     "autoStart": "开机启动",
+    "autoStartFailed": "无法注册开机启动，请检查系统权限后重试。",
+    "saveFailed": "设置保存失败",
     "closeToTray": "关闭窗口时最小化到托盘",
     "closeToTrayHint": "点击关闭后程序继续在菜单栏/托盘运行。从托盘选择「退出」才会真正退出。",
     "startInTray": "启动时隐藏到托盘",

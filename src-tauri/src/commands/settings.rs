@@ -17,9 +17,12 @@ pub fn save_settings(
     state: State<'_, AppState>,
     partial: serde_json::Value,
 ) -> AppResult<AppSettings> {
-    let merged = state
+    let current = state.db.with_conn(repo::settings::get_settings)?;
+    let merged = repo::settings::preview_merge(&current, partial)?;
+    crate::autostart::apply_pending_from_app(&app, &current, &merged)?;
+    state
         .db
-        .with_conn(|c| repo::settings::merge_settings(c, partial))?;
+        .with_conn(|c| repo::settings::save_settings(c, &merged))?;
     state
         .close_to_tray
         .store(merged.close_to_tray, Ordering::Relaxed);

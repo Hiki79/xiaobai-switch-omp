@@ -25,7 +25,8 @@ export interface AppError {
     | "lock_busy"
     | "master_key_missing"
     | "invalid_config"
-    | "internal";
+    | "internal"
+    | "autostart_failed";
   message: string;
   details?: string | null;
 }

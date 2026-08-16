@@ -1,4 +1,5 @@
 mod adapters;
+mod autostart;
 mod backup;
 mod commands;
 mod crypto;
@@ -60,6 +61,7 @@ pub fn run() {
                 .unwrap_or_else(|_| "zh-CN".into());
             let start_in_tray = state.start_in_tray.load(Ordering::Relaxed);
             app.manage(state);
+            autostart::sync_from_settings(app.handle());
             commands::apply_platform_window_chrome(app);
             if let Err(e) = tray::create_tray(app.handle(), &language) {
                 tracing::warn!("failed to create system tray: {e}");

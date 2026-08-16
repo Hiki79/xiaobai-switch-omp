@@ -10,7 +10,7 @@ import {
   GITHUB_RELEASES_URL,
   GITHUB_REPO_URL,
 } from "@/lib/constants";
-import { invoke } from "@/lib/invoke";
+import { invoke, isAppError } from "@/lib/invoke";
 import { openExternalUrl } from "@/lib/openUrl";
 import type { AppPaths, AppSettings, ProxyMode, ProxyProtocol } from "@/types/domain";
 import { SettingsSidebar } from "@/components/settings/SettingsSidebar";
@@ -22,14 +22,23 @@ const rowStyle: React.CSSProperties = { padding: "4px 0" };
 function GeneralSection() {
   const { t, i18n } = useTranslation();
   const { token } = theme.useToken();
+  const { message } = App.useApp();
   const settings = useSettingsStore((s) => s.settings);
   const saveSettings = useSettingsStore((s) => s.saveSettings);
 
   const patch = async (partial: Partial<AppSettings>) => {
-    await saveSettings(partial);
-    if (partial.language) await i18n.changeLanguage(partial.language);
-    if (typeof partial.alwaysOnTop === "boolean") {
-      await invoke("set_always_on_top", { enabled: partial.alwaysOnTop }).catch(() => null);
+    try {
+      await saveSettings(partial);
+      if (partial.language) await i18n.changeLanguage(partial.language);
+      if (typeof partial.alwaysOnTop === "boolean") {
+        await invoke("set_always_on_top", { enabled: partial.alwaysOnTop }).catch(() => null);
+      }
+    } catch (e) {
+      if (isAppError(e) && e.code === "autostart_failed") {
+        message.error(t("settings.autoStartFailed"));
+        return;
+      }
+      message.error(isAppError(e) ? e.message : t("settings.saveFailed"));
     }
   };
 

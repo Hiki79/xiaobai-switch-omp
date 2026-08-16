@@ -49,16 +49,21 @@ pub fn save_settings(conn: &Connection, settings: &AppSettings) -> AppResult<()>
     Ok(())
 }
 
-pub fn merge_settings(conn: &Connection, partial: serde_json::Value) -> AppResult<AppSettings> {
-    let mut current = serde_json::to_value(get_settings(conn)?)?;
-    if let (Some(cur), Some(part)) = (current.as_object_mut(), partial.as_object()) {
+pub fn preview_merge(current: &AppSettings, partial: serde_json::Value) -> AppResult<AppSettings> {
+    let mut value = serde_json::to_value(current)?;
+    if let (Some(cur), Some(part)) = (value.as_object_mut(), partial.as_object()) {
         for (k, v) in part {
             cur.insert(k.clone(), v.clone());
         }
     }
-    let merged: AppSettings = serde_json::from_value(current)
+    let merged: AppSettings = serde_json::from_value(value)
         .map_err(|e| AppError::new("validation_failed", format!("settings merge: {e}")))?;
-    let merged = normalize(merged);
+    Ok(normalize(merged))
+}
+
+pub fn merge_settings(conn: &Connection, partial: serde_json::Value) -> AppResult<AppSettings> {
+    let current = get_settings(conn)?;
+    let merged = preview_merge(&current, partial)?;
     save_settings(conn, &merged)?;
     Ok(merged)
 }
@@ -100,6 +105,16 @@ mod tests {
         .unwrap();
         assert!(!merged.close_to_tray);
         assert!(!merged.start_in_tray);
+    }
+
+    #[test]
+    fn preview_merge_flips_auto_start_without_writing() {
+        let conn = conn();
+        let current = get_settings(&conn).unwrap();
+        assert!(!current.auto_start);
+        let merged = preview_merge(&current, serde_json::json!({ "autoStart": true })).unwrap();
+        assert!(merged.auto_start);
+        assert!(!get_settings(&conn).unwrap().auto_start);
     }
 
     #[test]

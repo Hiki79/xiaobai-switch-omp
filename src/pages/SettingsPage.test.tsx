@@ -108,6 +108,24 @@ describe("SettingsPage tray", () => {
     expect(useSettingsStore.getState().settings.startInTray).toBe(false);
     expect(startInTray).toBeDisabled();
   });
+
+  it("persists launch-at-login when the auto-start switch is clicked", async () => {
+    render(
+      <Wrapper>
+        <SettingsPage />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("开机启动")).toBeInTheDocument();
+    });
+    expect(useSettingsStore.getState().settings.autoStart).toBe(false);
+
+    fireEvent.click(screen.getAllByRole("switch")[1]);
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.autoStart).toBe(true);
+    });
+  });
 });
 
 describe("SettingsPage about", () => {
