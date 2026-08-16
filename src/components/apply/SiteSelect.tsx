@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { Select } from "antd";
+import { useTranslation } from "react-i18next";
 import type { Site } from "@/types/domain";
 import { SiteAvatar } from "@/components/sites/SiteAvatar";
 
@@ -6,6 +8,7 @@ interface SiteOption {
   value: string;
   label: string;
   site: Site;
+  disabled?: boolean;
 }
 
 interface Props {
@@ -25,12 +28,33 @@ function SiteOptionLabel({ site, size = 18 }: { site: Site; size?: number }) {
   );
 }
 
+function toLeaf(site: Site, disabled: boolean): SiteOption {
+  return { value: site.id, label: site.name, site, disabled };
+}
+
 export function SiteSelect({ sites, value, placeholder, disabled, onChange }: Props) {
-  const options: SiteOption[] = sites.map((site) => ({
-    value: site.id,
-    label: site.name,
-    site,
-  }));
+  const { t } = useTranslation();
+
+  const options = useMemo(() => {
+    const enabled = sites.filter((s) => s.enabled);
+    const off = sites.filter((s) => !s.enabled);
+    const groups = [];
+    if (enabled.length > 0) {
+      groups.push({
+        label: <span>{t("apply.siteGroupEnabled")}</span>,
+        title: t("apply.siteGroupEnabled"),
+        options: enabled.map((site) => toLeaf(site, false)),
+      });
+    }
+    if (off.length > 0) {
+      groups.push({
+        label: <span>{t("apply.siteGroupDisabled")}</span>,
+        title: t("apply.siteGroupDisabled"),
+        options: off.map((site) => toLeaf(site, true)),
+      });
+    }
+    return groups;
+  }, [sites, t]);
 
   return (
     <Select
@@ -43,8 +67,9 @@ export function SiteSelect({ sites, value, placeholder, disabled, onChange }: Pr
       showSearch
       optionFilterProp="label"
       optionRender={(option) => {
-        const site = (option.data as SiteOption).site;
-        return <SiteOptionLabel site={site} />;
+        const data = option.data as SiteOption | { options?: SiteOption[] };
+        if (!("site" in data) || !data.site) return option.label;
+        return <SiteOptionLabel site={data.site} />;
       }}
       labelRender={(props) => {
         const site = sites.find((s) => s.id === props.value);

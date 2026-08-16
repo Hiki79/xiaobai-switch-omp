@@ -3,9 +3,28 @@ import { App as AntdApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetBrowserMock } from "@/lib/browserMock";
+import type { TargetLiveStatus } from "@/types/domain";
 import { useApplyStore, useSiteStore, useUIStore } from "@/stores";
 import { ApplyPage } from "./ApplyPage";
 import "@/i18n";
+
+function status(kind: TargetLiveStatus["kind"], applied: boolean): TargetLiveStatus {
+  return {
+    kind,
+    installed: true,
+    version: "1.0.0",
+    configPath: kind === "claude_code" ? "~/.claude/settings.json" : "~/.codex/config.toml",
+    status: applied ? "applied" : "not_applied",
+    appliedSiteId: applied ? "site-1" : null,
+    appliedSiteName: applied ? "Relay One" : null,
+    appliedModelId: applied ? "gpt-4.1" : null,
+    providerId: null,
+    orphan: false,
+    liveSummary: {},
+    lastAppliedAt: applied ? 1 : null,
+    staleReason: null,
+  };
+}
 
 function Wrapper({ children }: { children: ReactNode }) {
   return (
@@ -107,5 +126,28 @@ describe("ApplyPage target switch", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Claude Code" }));
     expect(document.querySelector("[aria-busy='true']")).toBeNull();
     expect(screen.getByText("鉴权字段")).toBeInTheDocument();
+  });
+
+  it("shows a pulsing status dot for applied tools in the sidebar", async () => {
+    await seedSite();
+    useApplyStore.setState({
+      statuses: [status("claude_code", true), status("codex", false)],
+      statusHydrated: true,
+      loadStatus: async () => {},
+    });
+
+    render(
+      <Wrapper>
+        <ApplyPage />
+      </Wrapper>,
+    );
+
+    const claude = await screen.findByRole("menuitem", { name: "Claude Code" });
+    expect(claude.querySelector("[data-status='active']")).toBeTruthy();
+    expect(claude.querySelector(".ant-badge-status-processing")).toBeTruthy();
+
+    const codex = screen.getByRole("menuitem", { name: "Codex" });
+    expect(codex.querySelector("[data-status='inactive']")).toBeTruthy();
+    expect(codex.querySelector(".ant-badge-status-default")).toBeTruthy();
   });
 });

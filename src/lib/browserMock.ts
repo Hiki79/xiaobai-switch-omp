@@ -41,9 +41,45 @@ const DEFAULT_SETTINGS: AppSettings = {
   startInTray: false,
 };
 
+function defaultTargetStatuses(): TargetLiveStatus[] {
+  return [
+    {
+      kind: "claude_code",
+      installed: false,
+      version: null,
+      configPath: "~/.claude/settings.json",
+      status: "not_applied",
+      appliedSiteId: null,
+      appliedSiteName: null,
+      appliedModelId: null,
+      providerId: null,
+      orphan: false,
+      liveSummary: {},
+      lastAppliedAt: null,
+      staleReason: null,
+    },
+    {
+      kind: "codex",
+      installed: false,
+      version: null,
+      configPath: "~/.codex/config.toml",
+      status: "not_applied",
+      appliedSiteId: null,
+      appliedSiteName: null,
+      appliedModelId: null,
+      providerId: null,
+      orphan: false,
+      liveSummary: {},
+      lastAppliedAt: null,
+      staleReason: null,
+    },
+  ];
+}
+
 let settings: AppSettings = { ...DEFAULT_SETTINGS };
 let sites: Site[] = [];
 let backups: BackupInfo[] = [];
+let targetStatuses: TargetLiveStatus[] = defaultTargetStatuses();
 const models = new Map<string, SiteModel[]>();
 const keys = new Map<string, string>();
 const exclusions = new Map<string, Set<string>>();
@@ -52,9 +88,14 @@ export function resetBrowserMock() {
   settings = { ...DEFAULT_SETTINGS };
   sites = [];
   backups = [];
+  targetStatuses = defaultTargetStatuses();
   models.clear();
   keys.clear();
   exclusions.clear();
+}
+
+export function seedTargetStatuses(items: TargetLiveStatus[]) {
+  targetStatuses = items;
 }
 
 export function seedBackups(items: BackupInfo[]) {
@@ -348,56 +389,59 @@ export async function handleBrowserCommand<T>(
       return site as T;
     }
     case "list_target_status": {
-      const statuses: TargetLiveStatus[] = [
-        {
-          kind: "claude_code",
-          installed: false,
-          version: null,
-          configPath: "~/.claude/settings.json",
-          status: "not_applied",
-          appliedSiteId: null,
-          appliedSiteName: null,
-          appliedModelId: null,
-          providerId: null,
-          orphan: false,
-          liveSummary: {},
-          lastAppliedAt: null,
-          staleReason: null,
-        },
-        {
-          kind: "codex",
-          installed: false,
-          version: null,
-          configPath: "~/.codex/config.toml",
-          status: "not_applied",
-          appliedSiteId: null,
-          appliedSiteName: null,
-          appliedModelId: null,
-          providerId: null,
-          orphan: false,
-          liveSummary: {},
-          lastAppliedAt: null,
-          staleReason: null,
-        },
-      ];
-      return statuses as T;
+      return targetStatuses as T;
     }
     case "apply_site": {
+      const siteId = args?.siteId as string;
+      const modelId = args?.modelId as string;
+      const site = sites.find((s) => s.id === siteId);
+      const targets = ((args?.targets as string[]) ?? []) as TargetKind[];
+      const appliedAt = now();
+      targetStatuses = targetStatuses.map((row) =>
+        targets.includes(row.kind)
+          ? {
+              ...row,
+              status: "applied",
+              appliedSiteId: siteId,
+              appliedSiteName: site?.name ?? null,
+              appliedModelId: modelId,
+              lastAppliedAt: appliedAt,
+            }
+          : row,
+      );
       const result: ApplyResult = {
-        siteId: args?.siteId as string,
-        modelId: args?.modelId as string,
-        results: ((args?.targets as string[]) ?? []).map((t) => ({
-          target: t as "claude_code" | "codex",
+        siteId,
+        modelId,
+        results: targets.map((t) => ({
+          target: t,
           ok: true,
           status: "applied",
           backupPaths: [],
           message: "Browser mock: apply simulated (no filesystem writes)",
         })),
-        appliedAt: now(),
+        appliedAt,
       };
       return result as T;
     }
-    case "revert_target":
+    case "revert_target": {
+      const target = args?.target as TargetKind;
+      targetStatuses = targetStatuses.map((row) =>
+        row.kind === target
+          ? {
+              ...row,
+              status: "not_applied",
+              appliedSiteId: null,
+              appliedSiteName: null,
+              appliedModelId: null,
+              lastAppliedAt: null,
+              liveSummary: {},
+              orphan: false,
+              staleReason: null,
+            }
+          : row,
+      );
+      return undefined as T;
+    }
     case "cleanup_orphan_target":
       return undefined as T;
     case "list_apply_records":

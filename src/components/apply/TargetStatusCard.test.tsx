@@ -4,7 +4,12 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Site, TargetLiveStatus } from "@/types/domain";
 import { useSiteStore } from "@/stores";
-import { cliVersionLabel, TargetStatusCard } from "./TargetStatusCard";
+import {
+  cliVersionLabel,
+  isConfiguredStatus,
+  TargetStatusCard,
+  targetsAppliedForSite,
+} from "./TargetStatusCard";
 import { revealInExplorer } from "@/lib/revealInExplorer";
 import "@/i18n";
 
@@ -127,8 +132,13 @@ describe("TargetStatusCard", () => {
     expect(screen.getByText("配置路径")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: status.configPath })).toBeInTheDocument();
 
-    expect(screen.getByRole("button", { name: /清\s*除/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /刷\s*新/ })).toBeInTheDocument();
+    const revertBtn = screen.getByRole("button", { name: /清\s*除/ });
+    const refreshBtn = screen.getByRole("button", { name: /刷\s*新/ });
+    expect(revertBtn).toBeInTheDocument();
+    expect(revertBtn.className).toMatch(/ant-btn-dangerous/);
+    expect(revertBtn.querySelector("svg.lucide")).toBeTruthy();
+    expect(refreshBtn).toBeInTheDocument();
+    expect(refreshBtn.querySelector("svg.lucide")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /从目标移除/ })).not.toBeInTheDocument();
 
     expect(screen.getByText("当前配置摘要")).toBeInTheDocument();
@@ -206,5 +216,31 @@ describe("TargetStatusCard", () => {
     await waitFor(() => {
       expect(revealInExplorer).toHaveBeenCalledWith(status.configPath);
     });
+  });
+});
+
+describe("isConfiguredStatus", () => {
+  it("treats applied, stale, and orphan as configured", () => {
+    expect(isConfiguredStatus("applied")).toBe(true);
+    expect(isConfiguredStatus("stale")).toBe(true);
+    expect(isConfiguredStatus("orphan")).toBe(true);
+    expect(isConfiguredStatus("not_applied")).toBe(false);
+    expect(isConfiguredStatus("failed")).toBe(false);
+    expect(isConfiguredStatus(undefined)).toBe(false);
+  });
+});
+
+describe("targetsAppliedForSite", () => {
+  it("returns target kinds whose live config belongs to the site", () => {
+    expect(
+      targetsAppliedForSite(
+        [
+          { ...status, kind: "claude_code", appliedSiteId: "shuai" },
+          { ...status, kind: "codex", appliedSiteId: "other", status: "applied" },
+        ],
+        "shuai",
+      ),
+    ).toEqual(["claude_code"]);
+    expect(targetsAppliedForSite([{ ...status, appliedSiteId: null }], "shuai")).toEqual([]);
   });
 });

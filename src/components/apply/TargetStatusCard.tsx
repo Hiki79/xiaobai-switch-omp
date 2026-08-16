@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { App, Button, Collapse, Descriptions, Popconfirm, Tag, theme } from "antd";
+import { Eraser, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SiteAvatar } from "@/components/sites/SiteAvatar";
 import { isAppError } from "@/lib/invoke";
 import { revealInExplorer } from "@/lib/revealInExplorer";
 import { useSiteStore } from "@/stores";
-import type { CliToolInfo, TargetKind, TargetLiveStatus } from "@/types/domain";
+import type { ApplyStatus, CliToolInfo, TargetKind, TargetLiveStatus } from "@/types/domain";
 
 const STATUS_COLOR: Record<string, string> = {
   applied: "success",
@@ -153,7 +154,7 @@ export function TargetStatusCard({
               okButtonProps={{ danger: true, loading: reverting }}
               onConfirm={handleRevert}
             >
-              <Button size="small" loading={reverting}>
+              <Button size="small" danger icon={<Eraser size={14} />} loading={reverting}>
                 {t("apply.revert")}
               </Button>
             </Popconfirm>
@@ -172,7 +173,12 @@ export function TargetStatusCard({
               </Button>
             </Popconfirm>
           )}
-          <Button size="small" loading={refreshing} onClick={() => void handleRefresh()}>
+          <Button
+            size="small"
+            icon={<RefreshCw size={14} />}
+            loading={refreshing}
+            onClick={() => void handleRefresh()}
+          >
             {t("common.refresh")}
           </Button>
         </div>
@@ -252,6 +258,18 @@ export function statusFor(
   kind: TargetKind,
 ): TargetLiveStatus | undefined {
   return statuses.find((s) => s.kind === kind);
+}
+
+/** True when the target still has written config (applied / stale / leftover). */
+export function isConfiguredStatus(status: ApplyStatus | undefined): boolean {
+  return status === "applied" || status === "stale" || status === "orphan";
+}
+
+export function targetsAppliedForSite(
+  statuses: TargetLiveStatus[],
+  siteId: string,
+): TargetKind[] {
+  return statuses.filter((s) => s.appliedSiteId === siteId).map((s) => s.kind);
 }
 
 export function toolFor(tools: CliToolInfo[], kind: TargetKind): CliToolInfo | undefined {

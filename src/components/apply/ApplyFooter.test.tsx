@@ -45,6 +45,8 @@ describe("ApplyFooter", () => {
     const footer = screen.getByTestId("apply-footer");
     expect(footer).toHaveTextContent("配置备份记录");
     expect(footer).toHaveTextContent("应用配置");
+    expect(screen.getByRole("button", { name: /配置备份记录/ }).querySelector("svg.lucide")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "应用配置" }).querySelector("svg.lucide")).toBeTruthy();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /配置备份记录/ }));

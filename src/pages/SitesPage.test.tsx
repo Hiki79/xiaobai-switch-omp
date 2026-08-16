@@ -2,8 +2,9 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { App as AntdApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resetBrowserMock } from "@/lib/browserMock";
-import { useSiteStore, useUIStore } from "@/stores";
+import { resetBrowserMock, seedTargetStatuses } from "@/lib/browserMock";
+import { useApplyStore, useSiteStore, useUIStore } from "@/stores";
+import type { TargetLiveStatus } from "@/types/domain";
 import { SitesPage } from "./SitesPage";
 import "@/i18n";
 
@@ -39,6 +40,16 @@ describe("SitesPage", () => {
       error: null,
     });
     useUIStore.setState({ selectedSiteId: null, activePage: "sites", pendingSiteForm: null });
+    useApplyStore.setState({
+      statuses: [],
+      tools: [],
+      records: [],
+      backups: [],
+      applying: false,
+      loading: false,
+      statusHydrated: false,
+      lastResult: null,
+    });
   });
 
   afterEach(() => {
@@ -259,6 +270,9 @@ describe("SitesPage", () => {
     expect(within(dialog).getAllByText("切换线路？").length).toBeGreaterThan(0);
     expect(within(dialog).getByRole("button", { name: /取\s*消/ })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "跳过应用" })).toBeInTheDocument();
+    const option = screen.getByText("https://api2.example.com").closest("button");
+    expect(option).toHaveClass("route-option");
+    expect(option).toHaveClass("cursor-pointer");
     expect(useSiteStore.getState().sites[0]?.baseUrl).toBe("https://api.example.com");
 
     fireEvent.click(within(dialog).getByRole("button", { name: /确\s*认/ }));
@@ -468,4 +482,168 @@ describe("SitesPage", () => {
     expect(tag.querySelector(".ant-tag-close-icon")).toBeNull();
     expect(document.querySelector("[data-model-multi-actions]")).toBeNull();
   });
+
+  it("shows 停用 on the enable switch when the site is off", async () => {
+    await act(async () => {
+      const site = await seedSite();
+      await useSiteStore.getState().updateSite(site.id, { enabled: false });
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    const sw = await screen.findByRole("switch");
+    expect(sw).not.toBeChecked();
+    expect(sw).toHaveTextContent("停用");
+  });
+
+  it("shows a pulsing status dot for enabled sites and a gray one when disabled", async () => {
+    await act(async () => {
+      await seedSite();
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    const item = await screen.findByRole("button", { name: /Relay One/ });
+    expect(item.querySelector("[data-status='active']")).toBeTruthy();
+    expect(item.querySelector(".ant-badge-status-processing")).toBeTruthy();
+
+    await act(async () => {
+      const site = useSiteStore.getState().sites[0];
+      if (site) await useSiteStore.getState().updateSite(site.id, { enabled: false });
+    });
+
+    expect(item.querySelector("[data-status='inactive']")).toBeTruthy();
+    expect(item.querySelector(".ant-badge-status-default")).toBeTruthy();
+  });
+
+  it("disables a site immediately when no target is using it", async () => {
+    await act(async () => {
+      await seedSite();
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    const sw = await screen.findByRole("switch");
+    expect(sw).toBeChecked();
+    fireEvent.click(sw);
+
+    await waitFor(() => {
+      expect(useSiteStore.getState().sites[0]?.enabled).toBe(false);
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("asks before disabling a site that is applied to a tool", async () => {
+    await act(async () => {
+      const site = await seedSite();
+      seedTargetStatuses([
+        appliedStatus("claude_code", site.id, site.name),
+        appliedStatus("codex", null, null),
+      ]);
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    fireEvent.click(await screen.findByRole("switch"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("停用站点");
+    expect(dialog).toHaveTextContent("Claude Code");
+    expect(within(dialog).getByRole("button", { name: /取\s*消/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /跳\s*过/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /清\s*除/ })).toBeInTheDocument();
+    expect(useSiteStore.getState().sites[0]?.enabled).toBe(true);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /取\s*消/ }));
+    expect(useSiteStore.getState().sites[0]?.enabled).toBe(true);
+  });
+
+  it("can skip clearing and only disable the site", async () => {
+    await act(async () => {
+      const site = await seedSite();
+      seedTargetStatuses([
+        appliedStatus("claude_code", site.id, site.name),
+        appliedStatus("codex", null, null),
+      ]);
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    fireEvent.click(await screen.findByRole("switch"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /跳\s*过/ }));
+
+    await waitFor(() => {
+      expect(useSiteStore.getState().sites[0]?.enabled).toBe(false);
+    });
+    expect(useApplyStore.getState().statuses.find((s) => s.kind === "claude_code")?.status).toBe(
+      "applied",
+    );
+  });
+
+  it("clears applied tool config when confirming disable", async () => {
+    await act(async () => {
+      const site = await seedSite();
+      seedTargetStatuses([
+        appliedStatus("claude_code", site.id, site.name),
+        appliedStatus("codex", site.id, site.name),
+      ]);
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    fireEvent.click(await screen.findByRole("switch"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /清\s*除/ }));
+
+    await waitFor(() => {
+      expect(useSiteStore.getState().sites[0]?.enabled).toBe(false);
+    });
+    expect(useApplyStore.getState().statuses.every((s) => s.status === "not_applied")).toBe(true);
+  });
 });
+
+function appliedStatus(
+  kind: TargetLiveStatus["kind"],
+  siteId: string | null,
+  siteName: string | null,
+): TargetLiveStatus {
+  return {
+    kind,
+    installed: true,
+    version: "1.0.0",
+    configPath: kind === "claude_code" ? "~/.claude/settings.json" : "~/.codex/config.toml",
+    status: siteId ? "applied" : "not_applied",
+    appliedSiteId: siteId,
+    appliedSiteName: siteName,
+    appliedModelId: siteId ? "gpt-4.1" : null,
+    providerId: null,
+    orphan: false,
+    liveSummary: {},
+    lastAppliedAt: siteId ? 1 : null,
+    staleReason: null,
+  };
+}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { App, Button, Checkbox, Empty, Skeleton, Switch, Tooltip, theme } from "antd";
 import { Plus, Trash2, Pencil, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useSiteStore, useUIStore } from "@/stores";
+import { useApplyStore, useSiteStore, useUIStore } from "@/stores";
 import { SiteFormModal, type SiteFormInitialValues } from "@/components/sites/SiteFormModal";
 import { ManualModelModal } from "@/components/sites/ManualModelModal";
 import { GoApplyButton } from "@/components/sites/GoApplyButton";
@@ -15,6 +15,7 @@ import { SiteRouteSwitcher } from "@/components/sites/SiteRouteSwitcher";
 import type { Site } from "@/types/domain";
 import { isAppError } from "@/lib/invoke";
 import { useDeferredReady } from "@/hooks/useDeferredReady";
+import { targetsAppliedForSite } from "@/components/apply/TargetStatusCard";
 
 function protocolLabelKey(protocol: Site["protocol"]): string {
   return protocol === "anthropic" ? "sites.protocolAnthropic" : "sites.protocolOpenai";
@@ -35,6 +36,8 @@ export function SitesPage() {
   const setSelectedModel = useSiteStore((s) => s.setSelectedModel);
   const deleteSite = useSiteStore((s) => s.deleteSite);
   const updateSite = useSiteStore((s) => s.updateSite);
+  const loadStatus = useApplyStore((s) => s.loadStatus);
+  const revert = useApplyStore((s) => s.revert);
   const selectedSiteId = useUIStore((s) => s.selectedSiteId);
   const setSelectedSiteId = useUIStore((s) => s.setSelectedSiteId);
   const setPage = useUIStore((s) => s.setPage);
@@ -122,6 +125,78 @@ export function SitesPage() {
     },
     [setSelectedSiteId, handleFetchModels],
   );
+
+  const disableSite = async (site: Site, clear: boolean) => {
+    try {
+      if (clear) {
+        const targets = targetsAppliedForSite(useApplyStore.getState().statuses, site.id);
+        for (const kind of targets) {
+          await revert(kind);
+        }
+      }
+      await updateSite(site.id, { enabled: false });
+      message.success(clear ? t("sites.disableClearedSuccess") : t("sites.disableSuccess"));
+    } catch (e) {
+      message.error(isAppError(e) ? e.message : String(e));
+    }
+  };
+
+  const handleEnabledChange = async (site: Site, enabled: boolean) => {
+    if (enabled) {
+      try {
+        await updateSite(site.id, { enabled: true });
+      } catch (e) {
+        message.error(isAppError(e) ? e.message : String(e));
+      }
+      return;
+    }
+
+    try {
+      await loadStatus({ force: true });
+    } catch (e) {
+      message.error(isAppError(e) ? e.message : String(e));
+      return;
+    }
+
+    const targets = targetsAppliedForSite(useApplyStore.getState().statuses, site.id);
+    if (targets.length === 0) {
+      await disableSite(site, false);
+      return;
+    }
+
+    const targetLabels = targets
+      .map((kind) => (kind === "claude_code" ? t("apply.targetClaude") : t("apply.targetCodex")))
+      .join(t("common.listSep"));
+
+    const dlg = modal.confirm({
+      centered: true,
+      title: t("sites.disableAppliedTitle"),
+      content: t("sites.disableAppliedHint", { targets: targetLabels }),
+      footer: (
+        <div className="flex justify-end gap-2">
+          <Button onClick={() => dlg.destroy()}>{t("common.cancel")}</Button>
+          <Button
+            onClick={() => {
+              dlg.destroy();
+              void disableSite(site, false);
+            }}
+          >
+            {t("sites.disableSkip")}
+          </Button>
+          <Button
+            type="primary"
+            danger
+            onClick={() => {
+              dlg.destroy();
+              void disableSite(site, true);
+            }}
+          >
+            {t("sites.disableClear")}
+          </Button>
+        </div>
+      ),
+    });
+  };
 
   const handleDelete = (site: Site) => {
     let cleanup = false;
@@ -252,7 +327,7 @@ export function SitesPage() {
                   <span className="min-w-0 truncate text-base font-medium">{selected.name}</span>
                   <div className="shrink-0">
                     <GoApplyButton
-                      disabled={!selected.selectedModelId}
+                      disabled={!selected.selectedModelId || !selected.enabled}
                       onApply={(tab) => {
                         setSelectedSiteId(selected.id);
                         setApplyPrefillSiteId(selected.id);
@@ -267,7 +342,8 @@ export function SitesPage() {
                     size="small"
                     checked={selected.enabled}
                     checkedChildren={t("sites.enabled")}
-                    onChange={(v) => void updateSite(selected.id, { enabled: v })}
+                    unCheckedChildren={t("sites.disabled")}
+                    onChange={(v) => void handleEnabledChange(selected, v)}
                   />
                   <Tooltip title={t("sites.fetchModels")}>
                     <Button

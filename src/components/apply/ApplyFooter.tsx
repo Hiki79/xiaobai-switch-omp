@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button, Modal, theme } from "antd";
+import { Check, History } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TargetKind } from "@/types/domain";
 import { TargetBackupList } from "./TargetBackupList";
@@ -26,10 +27,13 @@ export function ApplyFooter({ loading, disabled, target, onApply }: Props) {
       }}
     >
       <div className="flex items-center gap-2">
-        <Button onClick={() => setBackupOpen(true)}>{t("apply.backupRecords")}</Button>
+        <Button icon={<History size={14} />} onClick={() => setBackupOpen(true)}>
+          {t("apply.backupRecords")}
+        </Button>
         <Button
           type="primary"
           className="flex-1"
+          icon={<Check size={14} />}
           loading={loading}
           disabled={disabled}
           onClick={onApply}

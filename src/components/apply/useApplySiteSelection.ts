@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSiteStore, useUIStore } from "@/stores";
-import { pickApplySiteId } from "./hydrateApplyForm";
+import { pickApplySiteId, selectableApplySites } from "./hydrateApplyForm";
 
 export function useApplySiteSelection(appliedSiteId: string | null | undefined) {
   const sites = useSiteStore((s) => s.sites);
+  const selectable = useMemo(() => selectableApplySites(sites), [sites]);
   const selectedSiteId = useUIStore((s) => s.selectedSiteId);
   const setSelectedSiteId = useUIStore((s) => s.setSelectedSiteId);
   const applyPrefillSiteId = useUIStore((s) => s.applyPrefillSiteId);
@@ -11,7 +12,7 @@ export function useApplySiteSelection(appliedSiteId: string | null | undefined) 
 
   const [siteId, setSiteId] = useState<string | null>(() =>
     pickApplySiteId({
-      sites: useSiteStore.getState().sites,
+      sites: selectableApplySites(useSiteStore.getState().sites),
       prefillSiteId: useUIStore.getState().applyPrefillSiteId,
       selectedSiteId: useUIStore.getState().selectedSiteId,
       appliedSiteId,
@@ -21,29 +22,52 @@ export function useApplySiteSelection(appliedSiteId: string | null | undefined) 
 
   useEffect(() => {
     if (applyPrefillSiteId) {
-      if (sites.some((s) => s.id === applyPrefillSiteId)) {
+      if (selectable.some((s) => s.id === applyPrefillSiteId)) {
         setSiteId(applyPrefillSiteId);
         userPicked.current = true;
       }
       setApplyPrefillSiteId(null);
       return;
     }
-    if (userPicked.current || sites.length === 0) return;
-    const next = pickApplySiteId({
-      sites,
-      selectedSiteId,
-      appliedSiteId,
+    setSiteId((current) => {
+      const currentValid = Boolean(current && selectable.some((s) => s.id === current));
+      if (!currentValid) {
+        userPicked.current = false;
+        return pickApplySiteId({
+          sites: selectable,
+          selectedSiteId,
+          appliedSiteId,
+        });
+      }
+      if (userPicked.current) return current;
+      return (
+        pickApplySiteId({
+          sites: selectable,
+          selectedSiteId,
+          appliedSiteId,
+        }) ?? current
+      );
     });
-    if (next) setSiteId(next);
-  }, [sites, appliedSiteId, applyPrefillSiteId, selectedSiteId, setApplyPrefillSiteId]);
+  }, [selectable, appliedSiteId, applyPrefillSiteId, selectedSiteId, setApplyPrefillSiteId]);
 
   const selectSite = (id: string) => {
+    if (!selectable.some((s) => s.id === id)) return;
     userPicked.current = true;
     setSiteId(id);
     setSelectedSiteId(id);
   };
 
-  const site = useMemo(() => sites.find((s) => s.id === siteId) ?? null, [sites, siteId]);
+  const site = useMemo(
+    () => selectable.find((s) => s.id === siteId) ?? null,
+    [selectable, siteId],
+  );
 
-  return { siteId, site, sites, selectSite };
+  return {
+    siteId,
+    site,
+    sites,
+    selectSite,
+    hasAnySite: sites.length > 0,
+    hasEnabledSite: selectable.length > 0,
+  };
 }

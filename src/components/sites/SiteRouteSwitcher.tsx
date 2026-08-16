@@ -138,6 +138,9 @@ export function SiteRouteSwitcher({ site }: Props) {
         boxShadow: token.boxShadowSecondary,
         border: `1px solid ${token.colorBorderSecondary}`,
         maxWidth: 360,
+        ["--route-option-hover" as string]: token.colorFillTertiary,
+        ["--route-option-active" as string]: token.colorPrimaryBg,
+        ["--route-option-active-hover" as string]: token.colorPrimaryBgHover,
       }}
     >
       {urls.map((url) => {
@@ -149,11 +152,9 @@ export function SiteRouteSwitcher({ site }: Props) {
           <button
             key={url}
             type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
-            style={{
-              background: active ? token.colorPrimaryBg : undefined,
-              color: token.colorText,
-            }}
+            className="route-option flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs"
+            data-active={active ? "true" : "false"}
+            style={{ color: token.colorText }}
             onClick={() => handleSelect(url)}
           >
             <span className="inline-flex w-3.5 shrink-0" style={{ color: token.colorPrimary }}>
@@ -171,6 +172,7 @@ export function SiteRouteSwitcher({ site }: Props) {
           type="text"
           size="small"
           block
+          className="cursor-pointer"
           loading={probing}
           icon={<RefreshCw size={12} />}
           onClick={(e) => {

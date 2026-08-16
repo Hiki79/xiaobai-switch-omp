@@ -17,6 +17,10 @@ const CODEX_EFFORTS = new Set<CodexReasoningEffort>([
   "xhigh",
 ]);
 
+export function selectableApplySites<T extends { enabled: boolean }>(sites: T[]): T[] {
+  return sites.filter((s) => s.enabled);
+}
+
 export interface PickApplySiteIdInput {
   sites: Pick<Site, "id">[];
   prefillSiteId?: string | null;

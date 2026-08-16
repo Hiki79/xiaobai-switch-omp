@@ -2,7 +2,10 @@ import { Menu, theme } from "antd";
 import ClaudeCode from "@lobehub/icons/es/ClaudeCode";
 import Codex from "@lobehub/icons/es/Codex";
 import { useTranslation } from "react-i18next";
+import { StatusDot } from "@/components/StatusDot";
+import { useApplyStore } from "@/stores";
 import { useUIStore, type ApplyTargetTab } from "@/stores/uiStore";
+import { isConfiguredStatus } from "./TargetStatusCard";
 
 const TAB_KEYS: ApplyTargetTab[] = ["claude_code", "codex"];
 
@@ -16,12 +19,26 @@ export function ApplySidebar() {
   const { token } = theme.useToken();
   const applyTab = useUIStore((s) => s.applyTab);
   const setApplyTab = useUIStore((s) => s.setApplyTab);
+  const statuses = useApplyStore((s) => s.statuses);
 
-  const items = TAB_KEYS.map((key) => ({
-    key,
-    icon: MENU_ICONS[key],
-    label: key === "claude_code" ? t("apply.targetClaude") : t("apply.targetCodex"),
-  }));
+  const items = TAB_KEYS.map((key) => {
+    const configured = isConfiguredStatus(statuses.find((s) => s.kind === key)?.status);
+    const name = key === "claude_code" ? t("apply.targetClaude") : t("apply.targetCodex");
+    return {
+      key,
+      icon: MENU_ICONS[key],
+      label: (
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <StatusDot
+            className="shrink-0"
+            active={configured}
+            title={configured ? t("apply.status_applied") : t("apply.status_not_applied")}
+          />
+          <span className="truncate">{name}</span>
+        </span>
+      ),
+    };
+  });
 
   return (
     <div className="flex h-full flex-col" style={{ backgroundColor: token.colorBgContainer, overflowY: "auto" }}>

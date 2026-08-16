@@ -31,7 +31,9 @@ export const ClaudeApplyPanel = memo(function ClaudeApplyPanel() {
   const statusLoading = useApplyStore((s) => s.loading);
 
   const status = statusFor(statuses, "claude_code");
-  const { siteId, site, sites, selectSite } = useApplySiteSelection(status?.appliedSiteId);
+  const { siteId, site, sites, selectSite, hasAnySite, hasEnabledSite } = useApplySiteSelection(
+    status?.appliedSiteId,
+  );
 
   const [modelId, setModelId] = useState<string | undefined>();
   const [claudeAuth, setClaudeAuth] = useState<ClaudeAuthKeyStyle>("anthropic_auth_token");
@@ -132,10 +134,13 @@ export const ClaudeApplyPanel = memo(function ClaudeApplyPanel() {
         </SettingsGroup>
 
         <SettingsGroup title={t("apply.groupSite")}>
-          {sites.length === 0 ? (
+          {!hasAnySite ? (
             <Alert type="info" title={t("apply.noSite")} showIcon />
           ) : (
             <Space orientation="vertical" className="w-full" size="middle">
+              {!hasEnabledSite && (
+                <Alert type="info" title={t("apply.noEnabledSite")} showIcon />
+              )}
               <div style={rowStyle}>
                 <div className="mb-1 text-sm opacity-70">{t("apply.selectSite")}</div>
                 <SiteSelect

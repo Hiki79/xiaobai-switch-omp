@@ -170,6 +170,32 @@ svg.lucide {
   opacity: 1;
 }
 
+.status-dot.ant-badge-status {
+  line-height: 1;
+}
+
+.status-dot .ant-badge-status-dot {
+  top: 0;
+}
+
+.route-option {
+  cursor: pointer;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.route-option:hover {
+  background: var(--route-option-hover);
+}
+
+.route-option[data-active="true"] {
+  background: var(--route-option-active);
+}
+
+.route-option[data-active="true"]:hover {
+  background: var(--route-option-active-hover);
+}
+
 .go-apply-swap {
   opacity: 1;
   transform: translateY(0);
@@ -206,6 +232,10 @@ svg.lucide {
 
 @media (prefers-reduced-motion: reduce) {
   .go-apply-swap {
+    transition: none;
+  }
+
+  .route-option {
     transition: none;
   }
 }

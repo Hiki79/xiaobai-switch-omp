@@ -195,4 +195,50 @@ describe("ClaudeApplyPanel", () => {
     expect(within(dialog).queryByText(/settings.json updated/i)).not.toBeInTheDocument();
     expect(within(dialog).queryByText(/Browser mock/i)).not.toBeInTheDocument();
   });
+
+  it("groups disabled sites as unselectable in the apply picker", async () => {
+    const enabled = await useSiteStore.getState().createSite({
+      name: "Enabled Relay",
+      baseUrl: "https://api.example.com",
+      apiKey: "sk-test",
+    });
+    const disabled = await useSiteStore.getState().createSite({
+      name: "Disabled Relay",
+      baseUrl: "https://api2.example.com",
+      apiKey: "sk-test-2",
+    });
+    await useSiteStore.getState().updateSite(disabled.id, { enabled: false });
+    useUIStore.getState().setSelectedSiteId(enabled.id);
+
+    await act(async () => {
+      render(
+        <Wrapper>
+          <div style={{ height: 800 }}>
+            <ClaudeApplyPanel />
+          </div>
+        </Wrapper>,
+      );
+    });
+
+    fireEvent.mouseDown(screen.getAllByRole("combobox")[0]!);
+    const dropdown = await waitFor(() => {
+      const el = document.querySelector(".ant-select-dropdown");
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(dropdown).toHaveTextContent("已启用");
+    expect(dropdown).toHaveTextContent("未启用");
+    expect(dropdown).toHaveTextContent("Enabled Relay");
+    expect(dropdown).toHaveTextContent("Disabled Relay");
+
+    const disabledOption = Array.from(dropdown.querySelectorAll(".ant-select-item-option")).find(
+      (el) => el.textContent?.includes("Disabled Relay"),
+    );
+    expect(disabledOption).toHaveClass("ant-select-item-option-disabled");
+
+    fireEvent.click(disabledOption!);
+    const siteSelected = document.querySelector(".ant-select-content");
+    expect(siteSelected?.textContent ?? "").toContain("Enabled Relay");
+    expect(siteSelected?.textContent ?? "").not.toContain("Disabled Relay");
+  });
 });

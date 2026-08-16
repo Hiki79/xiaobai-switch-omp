@@ -3,6 +3,7 @@ import type { MenuProps } from "antd";
 import { Ellipsis, Pencil, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Site } from "@/types/domain";
+import { StatusDot } from "@/components/StatusDot";
 import { SiteAvatar } from "@/components/sites/SiteAvatar";
 
 interface Props {
@@ -65,7 +66,14 @@ export function SiteListItem({ site, active, onSelect, onEdit, onDelete }: Props
         >
           <SiteAvatar siteId={site.id} name={site.name} baseUrl={site.baseUrl} size={28} />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{site.name}</div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <StatusDot
+                className="shrink-0"
+                active={site.enabled}
+                title={site.enabled ? t("sites.enabled") : t("sites.disabled")}
+              />
+              <div className="truncate text-sm font-medium">{site.name}</div>
+            </div>
             <div className="truncate text-xs opacity-50">{site.baseUrl}</div>
           </div>
         </button>

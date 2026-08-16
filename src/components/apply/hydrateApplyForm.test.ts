@@ -5,6 +5,7 @@ import {
   hydrateClaudeForm,
   hydrateCodexForm,
   pickApplySiteId,
+  selectableApplySites,
 } from "./hydrateApplyForm";
 
 function site(partial: Partial<Site> & Pick<Site, "id">): Site {
@@ -54,6 +55,15 @@ function status(partial: Partial<TargetLiveStatus> = {}): TargetLiveStatus {
     ...partial,
   };
 }
+
+describe("selectableApplySites", () => {
+  it("only treats enabled sites as selectable", () => {
+    const enabled = site({ id: "on", enabled: true });
+    const off = site({ id: "off", enabled: false });
+    expect(selectableApplySites([enabled, off])).toEqual([enabled]);
+    expect(selectableApplySites([off])).toEqual([]);
+  });
+});
 
 describe("pickApplySiteId", () => {
   const sites = [{ id: "gptnb" }, { id: "shuai" }];
