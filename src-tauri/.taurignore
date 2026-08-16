@@ -1,0 +1,9 @@
+# Docs and editor noise — do not rebuild the Rust app
+*.md
+.DS_Store
+
+# Bundle-only / generated — not part of the Rust compile graph
+icons/
+gen/
+target/
+Cargo.lock
