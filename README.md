@@ -4,34 +4,10 @@
 
 # Xiaobai Switch
 
-站点驱动的 Claude Code / Codex 上游配置桌面应用。
+小白也能上手的，以站点驱动的 Claude Code / Codex 上游配置桌面应用。
 
 以「上游站点」为中心：配置 Base URL + API Key → 拉取或手输模型 → 一键应用到 Claude Code / Codex。
 
-## 技术栈
-
-- Tauri 2 + React 19 + TypeScript + Vite
-- Ant Design 6 + Tailwind CSS 4
-- zustand + i18next（zh-CN / en-US）
-- Rust：SQLite、AES-256-GCM、reqwest、toml_edit
-
-## 开发
-
-```bash
-# 依赖
-pnpm install
-
-# 仅前端（浏览器 mock，不写本地 CLI 配置）
-pnpm dev
-
-# 桌面端（需 Rust 工具链）
-pnpm tauri dev
-
-# 检查
-pnpm typecheck
-pnpm test:run
-cd src-tauri && cargo test
-```
 
 ## 数据目录
 
@@ -122,38 +98,14 @@ xiaobaiswitch://sites?name=Mix&baseurl=https://first.example.com/v1&baseurls=htt
 
 URL 中携带 API Key 可能被浏览器历史、扩展或系统日志记录。不要把真实密钥写在公开页面；推荐登录后的私有后台按需生成，或省略 `apikey` 让用户在应用内补全。
 
-## 产品标识
-
-- 显示名：XiaoBaiSwitch
-- Bundle ID：`com.github.licoy.xiaobai-switch.app`
-
-## 发布（GitHub Actions）
-
-通过 **打 tag** 触发多平台构建，产物上传到 [GitHub Releases](../../releases)。
+## 版本支持
 
 | 平台 | Runner | Target |
 |------|--------|--------|
 | macOS Apple Silicon | `macos-latest` | `aarch64-apple-darwin` |
 | macOS Intel | `macos-latest` | `x86_64-apple-darwin` |
 | Windows x64 | `windows-latest` | `x86_64-pc-windows-msvc` |
-| Windows ARM64 | `windows-latest`（交叉编译） | `aarch64-pc-windows-msvc` |
-
-### 发版步骤
-
-```bash
-# 1. 同步版本号（package.json / tauri.conf.json / Cargo.toml）并创建 tag
-pnpm bump 0.1.1
-
-# 2. 推送 commit + tag → 触发 .github/workflows/release.yml
-git push && git push --tags
-
-# 或一步完成：
-pnpm bump --push 0.1.1
-```
-
-版本校验：tag 必须为 `vX.Y.Z`，且与上述三个文件中的 `version` 一致（由 `pnpm bump` 保证）。
-
-当前 macOS 产物为**未签名**构建；首次打开可能需要右键「打开」或在系统设置中允许。
+| Windows ARM64 | `windows-latest`（交叉编译） | `aarch64-pc-windows-msvc` 
 
 ## License
 
