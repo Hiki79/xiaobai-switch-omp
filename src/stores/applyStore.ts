@@ -98,6 +98,11 @@ export const useApplyStore = create<ApplyState>((set, get) => ({
         claudeEffortLevel: req.claudeEffortLevel ?? null,
         codexWriteAllModels: req.codexWriteAllModels ?? false,
         codexReasoningEffort: req.codexReasoningEffort ?? null,
+        codexRemoteCompaction: req.codexRemoteCompaction ?? false,
+        codexImageUnderstanding: req.codexImageUnderstanding ?? false,
+        codexImageGeneration: req.codexImageGeneration ?? false,
+        codexWebSearch: req.codexWebSearch ?? false,
+        codexCapabilitySource: req.codexCapabilitySource ?? "site",
       });
       set({ lastResult: result });
       await get().loadStatus({ force: true });

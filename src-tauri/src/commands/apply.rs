@@ -1,7 +1,8 @@
 use crate::backup::{self, BackupMeta, BackupMetaFile};
+use crate::capabilities::{capability_on, CODEX_COMPACT, CODEX_IMAGEGEN, CODEX_SEARCH, CODEX_VISION};
 use crate::domain::{
     ApplyRecordDto, ApplyResult, ApplyStatus, ApplyTargetResult, BackupInfo, BackupPreview,
-    ClaudeApplyOptions, ClaudeAuthKeyStyle, ClaudeEffortLevel, CodexApplyOptions,
+    CapabilitySource, ClaudeApplyOptions, ClaudeAuthKeyStyle, ClaudeEffortLevel, CodexApplyOptions,
     CodexReasoningEffort, TargetKind, TouchedKeys,
 };
 use crate::error::{AppError, AppResult};
@@ -33,6 +34,11 @@ pub fn apply_site(
     claude_effort_level: Option<String>,
     codex_write_all_models: Option<bool>,
     codex_reasoning_effort: Option<String>,
+    codex_remote_compaction: Option<bool>,
+    codex_image_understanding: Option<bool>,
+    codex_image_generation: Option<bool>,
+    codex_web_search: Option<bool>,
+    codex_capability_source: Option<String>,
 ) -> AppResult<ApplyResult> {
     if targets.is_empty() {
         return Err(AppError::new("validation_failed", "no targets selected"));
@@ -62,6 +68,23 @@ pub fn apply_site(
             .and_then(ClaudeEffortLevel::parse),
     };
 
+    let capability_source = CapabilitySource::parse(codex_capability_source.as_deref());
+    let (remote_compaction, image_understanding, image_generation, web_search) =
+        match capability_source {
+            CapabilitySource::Site => (
+                capability_on(&site.capabilities, CODEX_COMPACT),
+                capability_on(&site.capabilities, CODEX_VISION),
+                capability_on(&site.capabilities, CODEX_IMAGEGEN),
+                capability_on(&site.capabilities, CODEX_SEARCH),
+            ),
+            CapabilitySource::Custom => (
+                codex_remote_compaction.unwrap_or(false),
+                codex_image_understanding.unwrap_or(false),
+                codex_image_generation.unwrap_or(false),
+                codex_web_search.unwrap_or(false),
+            ),
+        };
+
     let write_all = codex_write_all_models.unwrap_or(false);
     let catalog_models = if write_all && targets.contains(&TargetKind::Codex) {
         state.db.with_conn(|c| {
@@ -81,6 +104,11 @@ pub fn apply_site(
             .as_deref()
             .and_then(CodexReasoningEffort::parse),
         catalog_models,
+        remote_compaction,
+        image_understanding,
+        image_generation,
+        web_search,
+        capability_source,
     };
 
     let applied_at = Utc::now().timestamp_millis();

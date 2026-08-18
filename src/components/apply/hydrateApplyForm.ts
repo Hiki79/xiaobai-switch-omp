@@ -1,12 +1,18 @@
 import type {
   ClaudeAuthKeyStyle,
   ClaudeEffortLevel,
+  CodexCapabilitySource,
   CodexReasoningEffort,
   LiveSummary,
   Site,
   SiteModel,
   TargetLiveStatus,
 } from "@/types/domain";
+import {
+  type CodexCapabilityFlags,
+  EMPTY_CODEX_FLAGS,
+  codexFlagsFromCapabilities,
+} from "@/lib/siteCapabilities";
 
 const CLAUDE_EFFORTS = new Set<ClaudeEffortLevel>(["low", "medium", "high", "max"]);
 const CODEX_EFFORTS = new Set<CodexReasoningEffort>([
@@ -82,6 +88,11 @@ export interface CodexFormDefaults {
   modelId: string | undefined;
   writeAllModels: boolean;
   reasoning: CodexReasoningEffort | undefined;
+  capabilitySource: CodexCapabilitySource;
+  remoteCompaction: boolean;
+  imageUnderstanding: boolean;
+  imageGeneration: boolean;
+  webSearch: boolean;
 }
 
 function appliedOnSite(site: Site | null, status: TargetLiveStatus | undefined): boolean {
@@ -118,6 +129,43 @@ export function hydrateClaudeForm(
   };
 }
 
+function liveTruthy(summary: LiveSummary | undefined, ...keys: string[]): boolean {
+  const raw = liveStr(summary, ...keys);
+  if (!raw) return false;
+  const normalized = raw.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "on";
+}
+
+function hydrateRemoteCompaction(live: LiveSummary | undefined): boolean {
+  if (liveTruthy(live, "remote_compaction")) return true;
+  return liveStr(live, "provider_display_name") === "OpenAI";
+}
+
+function hydrateWebSearch(live: LiveSummary | undefined): boolean {
+  const raw = liveStr(live, "web_search");
+  if (raw) return raw.trim().toLowerCase() !== "disabled";
+  if (liveStr(live, "model", "model_provider")) return true;
+  return false;
+}
+
+function flagsToDefaults(flags: CodexCapabilityFlags) {
+  return {
+    remoteCompaction: flags.compact,
+    imageUnderstanding: flags.vision,
+    imageGeneration: flags.imagegen,
+    webSearch: flags.search,
+  };
+}
+
+function liveCapabilityFlags(live: LiveSummary | undefined): CodexCapabilityFlags {
+  return {
+    compact: hydrateRemoteCompaction(live),
+    vision: liveTruthy(live, "tools_view_image", "view_image"),
+    imagegen: liveTruthy(live, "features_image_generation", "image_generation"),
+    search: hydrateWebSearch(live),
+  };
+}
+
 export function hydrateCodexForm(
   site: Site | null,
   status: TargetLiveStatus | undefined,
@@ -125,11 +173,18 @@ export function hydrateCodexForm(
   const live = status?.liveSummary;
   const onSite = appliedOnSite(site, status);
   const liveModel = liveStr(live, "model") ?? status?.appliedModelId ?? undefined;
+  const siteFlags = site ? codexFlagsFromCapabilities(site.capabilities) : EMPTY_CODEX_FLAGS;
+  const explicitSource = liveStr(live, "capability_source");
+  const useCustomLive = onSite && explicitSource === "custom";
+  const capabilitySource: CodexCapabilitySource = useCustomLive ? "custom" : "site";
+  const flags = useCustomLive ? liveCapabilityFlags(live) : siteFlags;
 
   return {
     modelId: onSite ? (liveModel ?? site?.selectedModelId ?? undefined) : (site?.selectedModelId ?? undefined),
     writeAllModels: Boolean(liveStr(live, "model_catalog_json")),
     reasoning: parseCodexReasoning(liveStr(live, "model_reasoning_effort")),
+    capabilitySource,
+    ...flagsToDefaults(flags),
   };
 }
 

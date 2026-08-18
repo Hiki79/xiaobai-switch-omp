@@ -102,6 +102,17 @@ describe("ApplyPage target switch", () => {
     await waitFor(() => {
       expect(screen.getByText("将站点全部模型写入 Codex")).toBeInTheDocument();
     });
+    expect(screen.getByText("平台能力")).toBeInTheDocument();
+    expect(screen.getByText("跟随站点预设能力")).toBeInTheDocument();
+    expect(screen.queryByText("识图支持")).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByText("跟随站点预设能力"));
+    const custom = await screen.findByText("自定义");
+    fireEvent.click(custom);
+    expect(screen.getByText("远程压缩")).toBeInTheDocument();
+    expect(screen.getByText("识图支持")).toBeInTheDocument();
+    expect(screen.getByText("生图支持")).toBeInTheDocument();
+    expect(screen.getByText("搜索")).toBeInTheDocument();
   });
 
   it("keeps a visited target mounted so switching back is instant", async () => {

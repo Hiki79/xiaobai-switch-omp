@@ -1,3 +1,4 @@
+use crate::capabilities::{capabilities_json, parse_capabilities_json};
 use crate::crypto::{key_prefix, Crypto};
 use crate::domain::{
     ClaudeAuthKeyStyle, CreateSiteInput, SiteModelDto, SiteProtocol, SiteRow, UpdateSiteInput,
@@ -11,7 +12,9 @@ use uuid::Uuid;
 fn map_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<SiteRow> {
     let base_url: String = row.get(2)?;
     let base_urls_json: Option<String> = row.get(16).ok().flatten();
+    let capabilities_json: Option<String> = row.get(17).ok().flatten();
     let base_urls = parse_base_urls_json(base_urls_json.as_deref(), &base_url);
+    let capabilities = parse_capabilities_json(capabilities_json.as_deref());
     let active = base_urls
         .first()
         .cloned()
@@ -34,6 +37,7 @@ fn map_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<SiteRow> {
         last_model_fetch_error: row.get(13)?,
         created_at: row.get(14)?,
         updated_at: row.get(15)?,
+        capabilities,
     })
 }
 
@@ -41,7 +45,7 @@ fn urls_json(urls: &[String]) -> AppResult<String> {
     Ok(serde_json::to_string(urls)?)
 }
 
-const SITE_COLS: &str = "id, name, base_url, api_key_encrypted, key_prefix, protocol, claude_auth_key_style, notes, enabled, sort_order, selected_model_id, last_model_fetch_at, last_model_fetch_latency_ms, last_model_fetch_error, created_at, updated_at, base_urls_json";
+const SITE_COLS: &str = "id, name, base_url, api_key_encrypted, key_prefix, protocol, claude_auth_key_style, notes, enabled, sort_order, selected_model_id, last_model_fetch_at, last_model_fetch_latency_ms, last_model_fetch_error, created_at, updated_at, base_urls_json, capabilities_json";
 
 pub fn list_sites(conn: &Connection) -> AppResult<Vec<SiteRow>> {
     let mut stmt = conn.prepare(&format!(
@@ -90,10 +94,12 @@ pub fn create_site(
     };
     let base_url = urls[0].clone();
     let urls_json = urls_json(&urls)?;
+    let capabilities = input.capabilities.unwrap_or_default();
+    let caps_json = capabilities_json(&capabilities)?;
 
     conn.execute(
-        "INSERT INTO sites (id, name, base_url, api_key_encrypted, key_prefix, protocol, claude_auth_key_style, notes, enabled, sort_order, selected_model_id, last_model_fetch_at, last_model_fetch_latency_ms, last_model_fetch_error, created_at, updated_at, base_urls_json)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,NULL,NULL,NULL,NULL,?10,?10,?11)",
+        "INSERT INTO sites (id, name, base_url, api_key_encrypted, key_prefix, protocol, claude_auth_key_style, notes, enabled, sort_order, selected_model_id, last_model_fetch_at, last_model_fetch_latency_ms, last_model_fetch_error, created_at, updated_at, base_urls_json, capabilities_json)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,NULL,NULL,NULL,NULL,?10,?10,?11,?12)",
         params![
             id,
             input.name,
@@ -105,7 +111,8 @@ pub fn create_site(
             input.notes,
             count,
             now,
-            urls_json
+            urls_json,
+            caps_json
         ],
     )?;
     get_site(conn, &id)
@@ -160,6 +167,9 @@ pub fn update_site(
     if let Some(o) = input.sort_order {
         site.sort_order = o;
     }
+    if let Some(capabilities) = input.capabilities {
+        site.capabilities = capabilities;
+    }
     site.updated_at = Utc::now().timestamp_millis();
 
     persist_site(conn, &site)?;
@@ -168,7 +178,7 @@ pub fn update_site(
 
 fn persist_site(conn: &Connection, site: &SiteRow) -> AppResult<()> {
     conn.execute(
-        "UPDATE sites SET name=?2, base_url=?3, api_key_encrypted=?4, key_prefix=?5, protocol=?6, claude_auth_key_style=?7, notes=?8, enabled=?9, sort_order=?10, selected_model_id=?11, updated_at=?12, base_urls_json=?13 WHERE id=?1",
+        "UPDATE sites SET name=?2, base_url=?3, api_key_encrypted=?4, key_prefix=?5, protocol=?6, claude_auth_key_style=?7, notes=?8, enabled=?9, sort_order=?10, selected_model_id=?11, updated_at=?12, base_urls_json=?13, capabilities_json=?14 WHERE id=?1",
         params![
             site.id,
             site.name,
@@ -182,7 +192,8 @@ fn persist_site(conn: &Connection, site: &SiteRow) -> AppResult<()> {
             site.sort_order,
             site.selected_model_id,
             site.updated_at,
-            urls_json(&site.base_urls)?
+            urls_json(&site.base_urls)?,
+            capabilities_json(&site.capabilities)?
         ],
     )?;
     Ok(())
@@ -540,5 +551,49 @@ mod tests {
             ids(&conn),
             vec!["gpt-4.1".to_string(), "gpt-4.2".to_string()]
         );
+    }
+
+    #[test]
+    fn create_and_update_persist_capabilities() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::apply_schema(&conn).unwrap();
+        let crypto = crate::crypto::Crypto::from_key([9u8; 32]);
+        let mut caps = std::collections::HashMap::new();
+        caps.insert("codex-vision".into(), true);
+        caps.insert("claude-foo".into(), true);
+        let created = create_site(
+            &conn,
+            &crypto,
+            CreateSiteInput {
+                name: "Relay".into(),
+                base_url: "https://a.example.com".into(),
+                base_urls: None,
+                api_key: "sk-test".into(),
+                protocol: None,
+                claude_auth_key_style: None,
+                notes: None,
+                capabilities: Some(caps),
+            },
+        )
+        .unwrap();
+        assert_eq!(created.capabilities.get("codex-vision"), Some(&true));
+        assert_eq!(created.capabilities.get("claude-foo"), Some(&true));
+
+        let mut next = std::collections::HashMap::new();
+        next.insert("codex-search".into(), true);
+        next.insert("claude-foo".into(), true);
+        let updated = update_site(
+            &conn,
+            &crypto,
+            &created.id,
+            UpdateSiteInput {
+                capabilities: Some(next),
+                ..UpdateSiteInput::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.capabilities.get("codex-search"), Some(&true));
+        assert_eq!(updated.capabilities.get("claude-foo"), Some(&true));
+        assert_eq!(get_site(&conn, &created.id).unwrap().capabilities.get("codex-search"), Some(&true));
     }
 }

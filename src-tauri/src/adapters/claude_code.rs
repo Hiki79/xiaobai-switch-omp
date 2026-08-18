@@ -546,6 +546,7 @@ mod rewrite_tests {
             last_model_fetch_error: None,
             created_at: 1,
             updated_at: 1,
+            capabilities: Default::default(),
         }
     }
 

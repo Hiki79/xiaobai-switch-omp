@@ -1,3 +1,4 @@
+use crate::capabilities::SiteCapabilities;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -111,6 +112,8 @@ pub struct SiteDto {
     pub last_model_fetch_error: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub capabilities: SiteCapabilities,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,6 +140,8 @@ pub struct CreateSiteInput {
     pub protocol: Option<String>,
     pub claude_auth_key_style: Option<String>,
     pub notes: Option<String>,
+    #[serde(default)]
+    pub capabilities: Option<SiteCapabilities>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +152,8 @@ pub struct DeepLinkSiteImportInput {
     pub api_key: String,
     pub protocol: Option<String>,
     pub notes: Option<String>,
+    #[serde(default)]
+    pub capabilities: Option<SiteCapabilities>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +178,8 @@ pub struct UpdateSiteInput {
     pub enabled: Option<bool>,
     pub selected_model_id: Option<String>,
     pub sort_order: Option<i64>,
+    #[serde(default)]
+    pub capabilities: Option<SiteCapabilities>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,6 +272,29 @@ impl CodexReasoningEffort {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CapabilitySource {
+    #[default]
+    Site,
+    Custom,
+}
+
+impl CapabilitySource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Site => "site",
+            Self::Custom => "custom",
+        }
+    }
+
+    pub fn parse(raw: Option<&str>) -> Self {
+        match raw.map(str::trim).map(|s| s.to_ascii_lowercase()) {
+            Some(value) if value == "custom" => Self::Custom,
+            _ => Self::Site,
+        }
+    }
+}
+
 /// Extra options for Claude Code apply.
 #[derive(Debug, Clone, Default)]
 pub struct ClaudeApplyOptions {
@@ -279,6 +311,11 @@ pub struct CodexApplyOptions {
     pub reasoning_effort: Option<CodexReasoningEffort>,
     /// Site models used when `write_all_models` is true.
     pub catalog_models: Vec<(String, String)>, // (model_id, display_name)
+    pub remote_compaction: bool,
+    pub image_understanding: bool,
+    pub image_generation: bool,
+    pub web_search: bool,
+    pub capability_source: CapabilitySource,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -527,6 +564,7 @@ pub struct SiteRow {
     pub last_model_fetch_error: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    pub capabilities: SiteCapabilities,
 }
 
 impl SiteRow {
@@ -553,6 +591,7 @@ impl SiteRow {
             last_model_fetch_error: self.last_model_fetch_error.clone(),
             created_at: self.created_at,
             updated_at: self.updated_at,
+            capabilities: self.capabilities.clone(),
         }
     }
 }

@@ -161,6 +161,7 @@ export async function handleBrowserCommand<T>(
         lastModelFetchError: null,
         createdAt: t,
         updatedAt: t,
+        capabilities: input.capabilities ?? {},
       };
       sites = [...sites, site];
       return site as T;
@@ -195,6 +196,8 @@ export async function handleBrowserCommand<T>(
           name,
           notes: input.notes !== undefined ? input.notes : existing.notes,
           keyPrefix: sameKey ? existing.keyPrefix : keyPrefix(apiKey),
+          capabilities:
+            input.capabilities !== undefined ? input.capabilities : existing.capabilities,
           updatedAt: now(),
         };
         if (!sameKey) keys.set(existing.id, apiKey);
@@ -215,6 +218,7 @@ export async function handleBrowserCommand<T>(
           apiKey,
           protocol,
           notes: input.notes ?? null,
+          capabilities: input.capabilities,
         } satisfies CreateSiteInput,
       });
       const result: DeepLinkSiteImportResult = {
@@ -259,6 +263,7 @@ export async function handleBrowserCommand<T>(
           selectedModelId:
             input.selectedModelId !== undefined ? input.selectedModelId : s.selectedModelId,
           sortOrder: input.sortOrder ?? s.sortOrder,
+          capabilities: input.capabilities !== undefined ? input.capabilities : s.capabilities,
           updatedAt: now(),
         };
       });

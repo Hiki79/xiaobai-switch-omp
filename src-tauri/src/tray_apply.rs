@@ -1,6 +1,7 @@
+use crate::capabilities::{capability_on, CODEX_COMPACT, CODEX_IMAGEGEN, CODEX_SEARCH, CODEX_VISION};
 use crate::domain::{
-    ApplyTargetResult, ClaudeAuthKeyStyle, ClaudeEffortLevel, CodexReasoningEffort, SiteRow,
-    TargetKind, TargetLiveStatus,
+    ApplyTargetResult, CapabilitySource, ClaudeAuthKeyStyle, ClaudeEffortLevel, CodexReasoningEffort,
+    SiteRow, TargetKind, TargetLiveStatus,
 };
 use crate::error::{AppError, AppResult};
 use crate::repo;
@@ -24,6 +25,11 @@ pub struct CodexHydration {
     pub model_id: Option<String>,
     pub write_all_models: bool,
     pub reasoning: Option<CodexReasoningEffort>,
+    pub remote_compaction: bool,
+    pub image_understanding: bool,
+    pub image_generation: bool,
+    pub web_search: bool,
+    pub capability_source: CapabilitySource,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -104,6 +110,42 @@ pub fn hydrate_codex(site: &SiteRow, status: Option<&TargetLiveStatus>) -> Codex
         .and_then(|s| live_str(s, &["model"]))
         .or_else(|| status.and_then(|s| s.applied_model_id.clone()));
 
+    let web_search = match live.and_then(|s| live_str(s, &["web_search"])) {
+        Some(value) => !value.eq_ignore_ascii_case("disabled"),
+        None => live
+            .and_then(|s| live_str(s, &["model", "model_provider"]))
+            .is_some(),
+    };
+
+    let capability_source = CapabilitySource::parse(
+        live
+            .and_then(|s| live_str(s, &["capability_source"]))
+            .as_deref(),
+    );
+
+    let (remote_compaction, image_understanding, image_generation, web_search) =
+        if capability_source == CapabilitySource::Site {
+            (
+                capability_on(&site.capabilities, CODEX_COMPACT),
+                capability_on(&site.capabilities, CODEX_VISION),
+                capability_on(&site.capabilities, CODEX_IMAGEGEN),
+                capability_on(&site.capabilities, CODEX_SEARCH),
+            )
+        } else {
+            (
+                live.and_then(|s| live_str(s, &["remote_compaction"]))
+                    .is_some_and(|v| v.eq_ignore_ascii_case("on"))
+                    || live
+                        .and_then(|s| live_str(s, &["provider_display_name"]))
+                        .is_some_and(|v| v == "OpenAI"),
+                live.and_then(|s| live_str(s, &["tools_view_image", "view_image"]))
+                    .is_some_and(|v| v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on")),
+                live.and_then(|s| live_str(s, &["features_image_generation", "image_generation"]))
+                    .is_some_and(|v| v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on")),
+                web_search,
+            )
+        };
+
     CodexHydration {
         model_id: if on_site {
             live_model.or_else(|| site.selected_model_id.clone())
@@ -117,6 +159,11 @@ pub fn hydrate_codex(site: &SiteRow, status: Option<&TargetLiveStatus>) -> Codex
             .and_then(|s| live_str(s, &["model_reasoning_effort"]))
             .as_deref()
             .and_then(CodexReasoningEffort::parse),
+        remote_compaction,
+        image_understanding,
+        image_generation,
+        web_search,
+        capability_source,
     }
 }
 
@@ -193,6 +240,11 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     h.effort.map(|e| e.as_str().into()),
                     None,
                     None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
                 )?;
                 results.extend(applied.results);
             }
@@ -215,6 +267,11 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     Some(h.write_all_models),
                     h.reasoning.map(|e| e.as_str().into()),
+                    Some(h.remote_compaction),
+                    Some(h.image_understanding),
+                    Some(h.image_generation),
+                    Some(h.web_search),
+                    Some(h.capability_source.as_str().into()),
                 )?;
                 results.extend(applied.results);
             }
@@ -254,6 +311,7 @@ mod tests {
             last_model_fetch_error: None,
             created_at: 1,
             updated_at: 1,
+            capabilities: Default::default(),
         }
     }
 
@@ -377,6 +435,11 @@ mod tests {
         assert_eq!(defaults.model_id.as_deref(), Some("codex-auto-review"));
         assert!(defaults.write_all_models);
         assert_eq!(defaults.reasoning, Some(CodexReasoningEffort::Xhigh));
+        assert!(!defaults.remote_compaction);
+        assert!(!defaults.image_understanding);
+        assert!(!defaults.image_generation);
+        assert!(!defaults.web_search);
+        assert_eq!(defaults.capability_source, CapabilitySource::Site);
     }
 
     #[test]
@@ -406,6 +469,63 @@ mod tests {
         );
         assert!(!defaults.write_all_models);
         assert_eq!(defaults.reasoning, None);
+        assert!(!defaults.remote_compaction);
+        assert!(!defaults.image_understanding);
+        assert!(!defaults.image_generation);
+        assert!(!defaults.web_search);
+        assert_eq!(defaults.capability_source, CapabilitySource::Site);
+    }
+
+    #[test]
+    fn hydrate_codex_reads_platform_capabilities() {
+        let mut live = HashMap::new();
+        live.insert("model".into(), Some("gpt-5.4".into()));
+        live.insert("capability_source".into(), Some("custom".into()));
+        live.insert("remote_compaction".into(), Some("on".into()));
+        live.insert("tools_view_image".into(), Some("true".into()));
+        live.insert("features_image_generation".into(), Some("true".into()));
+        live.insert("web_search".into(), Some("cached".into()));
+        let mut status = codex_status();
+        status.live_summary = live;
+        let defaults = hydrate_codex(
+            &site(
+                "shuai",
+                Some("gpt-4.1"),
+                ClaudeAuthKeyStyle::AnthropicAuthToken,
+            ),
+            Some(&status),
+        );
+        assert!(defaults.remote_compaction);
+        assert!(defaults.image_understanding);
+        assert!(defaults.image_generation);
+        assert!(defaults.web_search);
+        assert_eq!(defaults.capability_source, CapabilitySource::Custom);
+    }
+
+    #[test]
+    fn hydrate_codex_follow_site_reads_current_presets() {
+        let mut live = HashMap::new();
+        live.insert("model".into(), Some("gpt-5.4".into()));
+        live.insert("capability_source".into(), Some("site".into()));
+        live.insert("remote_compaction".into(), Some("off".into()));
+        live.insert("web_search".into(), Some("disabled".into()));
+        let mut status = codex_status();
+        status.live_summary = live;
+        let mut row = site(
+            "shuai",
+            Some("gpt-4.1"),
+            ClaudeAuthKeyStyle::AnthropicAuthToken,
+        );
+        row.capabilities
+            .insert(CODEX_COMPACT.into(), true);
+        row.capabilities
+            .insert(CODEX_VISION.into(), true);
+        let defaults = hydrate_codex(&row, Some(&status));
+        assert_eq!(defaults.capability_source, CapabilitySource::Site);
+        assert!(defaults.remote_compaction);
+        assert!(defaults.image_understanding);
+        assert!(!defaults.image_generation);
+        assert!(!defaults.web_search);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 mod adapters;
 mod autostart;
 mod backup;
+mod capabilities;
 mod commands;
 mod crypto;
 mod db;

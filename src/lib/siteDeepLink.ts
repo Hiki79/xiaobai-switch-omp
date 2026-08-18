@@ -1,6 +1,10 @@
-import type { SiteProtocol } from "@/types/domain";
+import type { SiteCapabilities, SiteProtocol } from "@/types/domain";
 import { redactSecret } from "@/lib/redact";
 import { normalizeBaseUrls } from "@/lib/urlNormalize";
+import {
+  appendCapabilitiesToSearchParams,
+  capabilitiesFromSearchParams,
+} from "@/lib/siteCapabilities";
 
 export interface SiteDeepLinkPayload {
   name: string;
@@ -8,6 +12,8 @@ export interface SiteDeepLinkPayload {
   apiKey: string | null;
   protocol: SiteProtocol;
   notes: string | null;
+  capabilities: SiteCapabilities;
+  hasCapabilityParams: boolean;
 }
 
 export const SITE_DEEP_LINK_SCHEME = "xiaobaiswitch:";
@@ -75,12 +81,16 @@ export function parseSiteDeepLink(rawUrl: string): SiteDeepLinkPayload | null {
   const notesRaw = url.searchParams.get("notes")?.trim() || "";
   if (notesRaw.length > MAX_SITE_DEEP_LINK_NOTES) return null;
 
+  const parsedCaps = capabilitiesFromSearchParams(url.searchParams);
+
   return {
     name,
     baseUrls,
     apiKey,
     protocol,
     notes: notesRaw || null,
+    capabilities: parsedCaps.capabilities,
+    hasCapabilityParams: parsedCaps.present,
   };
 }
 
@@ -91,6 +101,9 @@ export function buildSiteDeepLink(payload: SiteDeepLinkPayload): string {
   if (payload.apiKey) params.set("apikey", payload.apiKey);
   params.set("protocol", payload.protocol);
   if (payload.notes) params.set("notes", payload.notes);
+  if (payload.hasCapabilityParams) {
+    appendCapabilitiesToSearchParams(params, payload.capabilities);
+  }
   return `xiaobaiswitch://sites?${params.toString()}`;
 }
 

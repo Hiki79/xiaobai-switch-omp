@@ -7,6 +7,12 @@ import {
   parseSiteDeepLink,
   type SiteDeepLinkPayload,
 } from "@/lib/siteDeepLink";
+import {
+  anyCodexCapabilityOn,
+  summarizeCodexCapabilities,
+  codexFlagsFromCapabilities,
+} from "@/lib/siteCapabilities";
+import type { SiteCapabilities } from "@/types/domain";
 import { useSiteStore, useUIStore } from "@/stores";
 import type { DeepLinkSiteImportInput, DeepLinkSiteImportResult, Site } from "@/types/domain";
 
@@ -43,6 +49,25 @@ function getSuccessMessageKey(result: DeepLinkSiteImportResult): string {
   return "sites.deepLinkReused";
 }
 
+function capabilityTitleKey(key: string): string {
+  if (key === "codex-compact") return "apply.remoteCompaction";
+  if (key === "codex-vision") return "apply.imageUnderstanding";
+  if (key === "codex-imagegen") return "apply.imageGeneration";
+  if (key === "codex-search") return "apply.webSearch";
+  return key;
+}
+
+function summarizeCapabilityPayload(
+  capabilities: SiteCapabilities,
+  t: ConfirmSiteDeepLinkDeps["t"],
+): string {
+  if (!anyCodexCapabilityOn(capabilities)) return t("sites.deepLinkCapabilitiesOff");
+  return summarizeCodexCapabilities(codexFlagsFromCapabilities(capabilities))
+    .filter((item) => item.on)
+    .map((item) => t(capabilityTitleKey(item.key)))
+    .join(" · ");
+}
+
 function protocolLabelKey(protocol: SiteDeepLinkPayload["protocol"]): string {
   return protocol === "anthropic" ? "sites.protocolAnthropic" : "sites.protocolOpenai";
 }
@@ -76,6 +101,11 @@ export function SiteDeepLinkConfirmContent({
       </ConfirmRow>
       <ConfirmRow label={t("sites.protocol")}>{t(protocolLabelKey(payload.protocol))}</ConfirmRow>
       {payload.notes ? <ConfirmRow label={t("sites.notes")}>{payload.notes}</ConfirmRow> : null}
+      {payload.hasCapabilityParams ? (
+        <ConfirmRow label={t("sites.codexPrivateCapabilities")}>
+          {summarizeCapabilityPayload(payload.capabilities, t)}
+        </ConfirmRow>
+      ) : null}
       <ConfirmRow label={t("sites.apiKey")}>
         {payload.apiKey ? getSiteDeepLinkKeyPrefix(payload.apiKey) : t("sites.deepLinkNoKey")}
       </ConfirmRow>
@@ -108,6 +138,7 @@ export function confirmSiteDeepLinkImport(
           apiKey: payload.apiKey,
           protocol: payload.protocol,
           notes: payload.notes,
+          capabilities: payload.hasCapabilityParams ? payload.capabilities : undefined,
         });
         deps.setSelectedSiteId(result.site.id);
         if (result.created) {

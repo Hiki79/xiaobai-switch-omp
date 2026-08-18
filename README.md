@@ -48,7 +48,7 @@ API Key 在应用内加密存储；Apply 后会以明文写入目标 CLI 配置�
 ### 链接格式
 
 ```text
-xiaobaiswitch://sites?name=<name>&baseurls=<url>[&baseurls=<url>…][&apikey=<key>][&protocol=openai_compatible|anthropic][&notes=<notes>]
+xiaobaiswitch://sites?name=<name>&baseurls=<url>[&baseurls=<url>…][&apikey=<key>][&protocol=openai_compatible|anthropic][&notes=<notes>][&codex-compact=1][&codex-vision=1][&codex-imagegen=1][&codex-search=1]
 ```
 
 | 参数 | 必填 | 说明 |
@@ -58,8 +58,12 @@ xiaobaiswitch://sites?name=<name>&baseurls=<url>[&baseurls=<url>…][&apikey=<ke
 | `apikey` | 否 | API Key；省略则确认后打开预填表单，由用户补全 |
 | `protocol` | 否 | `openai_compatible`（默认）或 `anthropic` |
 | `notes` | 否 | 备注，最长 2000 |
+| `codex-compact` | 否 | Codex 远程压缩预设，`1`/`true`/`on`/`yes` 为开 |
+| `codex-vision` | 否 | Codex 识图预设 |
+| `codex-imagegen` | 否 | Codex 生图预设 |
+| `codex-search` | 否 | Codex 内置搜索预设 |
 
-别名：`baseurl` = `baseurls`；`type=openai` / `type=anthropic` = `protocol`。
+别名：`baseurl` = `baseurls`；`type=openai` / `type=anthropic` = `protocol`。其它符合 `平台-能力` 的 kebab 键会原样存入站点，当前界面只展示 Codex 四个。链接里只要出现任一能力参数，即视为一套完整 Codex 预设（未写的已知键为关）；老链接不加这些参数，不会覆盖站点里已有的预设。
 
 ### 多条线路怎么写
 

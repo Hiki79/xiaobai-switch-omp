@@ -3,13 +3,20 @@ import { Alert, App, Select, Space, Switch, Divider, Skeleton } from "antd";
 import { useTranslation } from "react-i18next";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { useApplyStore, useSiteStore } from "@/stores";
-import type { CodexReasoningEffort } from "@/types/domain";
+import type { CodexCapabilitySource, CodexReasoningEffort } from "@/types/domain";
+import {
+  codexFlagsFromCapabilities,
+  EMPTY_CODEX_FLAGS,
+  summarizeCodexCapabilities,
+  type CodexCapabilityFlags,
+} from "@/lib/siteCapabilities";
 import { ApplyFooter } from "./ApplyFooter";
 import { SiteSelect } from "./SiteSelect";
 import { TargetStatusCard, statusFor, toolFor } from "./TargetStatusCard";
 import { useApplySiteSelection } from "./useApplySiteSelection";
 import { buildModelOptions, hydrateCodexForm } from "./hydrateApplyForm";
 import { showApplyException, showApplyOutcome } from "./showApplyOutcome";
+import { CodexCapabilitySwitchList } from "./CodexCapabilitySwitchList";
 
 const rowStyle: React.CSSProperties = { padding: "4px 0" };
 
@@ -38,6 +45,8 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
   const [modelId, setModelId] = useState<string | undefined>();
   const [writeAllModels, setWriteAllModels] = useState(false);
   const [reasoning, setReasoning] = useState<CodexReasoningEffort | undefined>();
+  const [capabilitySource, setCapabilitySource] = useState<CodexCapabilitySource>("site");
+  const [codexFlags, setCodexFlags] = useState<CodexCapabilityFlags>(EMPTY_CODEX_FLAGS);
 
   const models = siteId ? (modelsBySite[siteId] ?? []) : [];
   const modelsLoading = siteId ? Boolean(modelsLoadingBySite[siteId]) : false;
@@ -52,6 +61,8 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
     if (!site) {
       lastHydrate.current = null;
       setModelId(undefined);
+      setCapabilitySource("site");
+      setCodexFlags(EMPTY_CODEX_FLAGS);
       return;
     }
     const stamp = status?.lastAppliedAt ?? null;
@@ -61,6 +72,13 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
     setModelId(defaults.modelId);
     setWriteAllModels(defaults.writeAllModels);
     setReasoning(defaults.reasoning);
+    setCapabilitySource(defaults.capabilitySource);
+    setCodexFlags({
+      compact: defaults.remoteCompaction,
+      vision: defaults.imageUnderstanding,
+      imagegen: defaults.imageGeneration,
+      search: defaults.webSearch,
+    });
     lastHydrate.current = { siteId: site.id, stamp };
   }, [site, status]);
 
@@ -88,6 +106,11 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
         modelId,
         codexWriteAllModels: writeAllModels,
         codexReasoningEffort: reasoning ?? null,
+        codexCapabilitySource: capabilitySource,
+        codexRemoteCompaction: capabilitySource === "custom" ? codexFlags.compact : undefined,
+        codexImageUnderstanding: capabilitySource === "custom" ? codexFlags.vision : undefined,
+        codexImageGeneration: capabilitySource === "custom" ? codexFlags.imagegen : undefined,
+        codexWebSearch: capabilitySource === "custom" ? codexFlags.search : undefined,
       });
       showApplyOutcome(
         modal,
@@ -203,6 +226,54 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
                   ]}
                 />
               </div>
+            </SettingsGroup>
+
+            <SettingsGroup title={t("apply.groupCodexCapabilities")}>
+              <div style={rowStyle}>
+                <div className="mb-1 text-sm opacity-70">{t("apply.capabilitySource")}</div>
+                <Select
+                  className="w-full"
+                  value={capabilitySource}
+                  onChange={(value) => {
+                    const next = value as CodexCapabilitySource;
+                    setCapabilitySource(next);
+                    if (next === "custom") {
+                      setCodexFlags(codexFlagsFromCapabilities(site.capabilities));
+                    }
+                  }}
+                  options={[
+                    { value: "site", label: t("apply.capabilityFollowSite") },
+                    { value: "custom", label: t("apply.capabilityCustom") },
+                  ]}
+                />
+                <div className="mt-1 text-xs opacity-50">
+                  {capabilitySource === "site"
+                    ? t("apply.capabilityFollowHint")
+                    : t("apply.capabilityCustomHint")}
+                </div>
+              </div>
+              {capabilitySource === "site" ? (
+                <div className="mt-3 text-xs opacity-50">
+                  {summarizeCodexCapabilities(codexFlagsFromCapabilities(site.capabilities))
+                    .map(({ key, on }) => {
+                      const title =
+                        key === "codex-compact"
+                          ? t("apply.remoteCompaction")
+                          : key === "codex-vision"
+                            ? t("apply.imageUnderstanding")
+                            : key === "codex-imagegen"
+                              ? t("apply.imageGeneration")
+                              : t("apply.webSearch");
+                      return `${title}${on ? t("apply.capabilityOn") : t("apply.capabilityOff")}`;
+                    })
+                    .join(" · ")}
+                </div>
+              ) : (
+                <>
+                  <Divider style={{ margin: "12px 0 8px" }} />
+                  <CodexCapabilitySwitchList value={codexFlags} onChange={setCodexFlags} />
+                </>
+              )}
             </SettingsGroup>
           </>
         )}

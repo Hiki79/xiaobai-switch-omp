@@ -74,7 +74,89 @@ pub fn model_catalog_path(codex_home_override: Option<&str>) -> AppResult<PathBu
     Ok(resolve_codex_home(codex_home_override)?.join("xiaobai-model-catalog.json"))
 }
 
-fn build_model_catalog(models: &[(String, String)], site_name: &str) -> Value {
+const REMOTE_COMPACTION_PROVIDER_NAME: &str = "OpenAI";
+const WEB_SEARCH_DISABLED: &str = "disabled";
+const WEB_SEARCH_ENABLED: &str = "cached";
+
+fn flag_str(on: bool) -> &'static str {
+    if on {
+        "true"
+    } else {
+        "false"
+    }
+}
+
+fn apply_provider_display_name(
+    table: &mut toml_edit::Table,
+    site_name: &str,
+    remote_compaction: bool,
+) {
+    let name = if remote_compaction {
+        REMOTE_COMPACTION_PROVIDER_NAME
+    } else {
+        site_name
+    };
+    table["name"] = value(name);
+}
+
+fn apply_web_search(doc: &mut DocumentMut, enabled: bool) {
+    doc["web_search"] = value(if enabled {
+        WEB_SEARCH_ENABLED
+    } else {
+        WEB_SEARCH_DISABLED
+    });
+}
+
+fn apply_image_understanding(doc: &mut DocumentMut, enabled: bool) {
+    doc["tools"]["view_image"] = value(enabled);
+}
+
+fn apply_image_generation(doc: &mut DocumentMut, enabled: bool) {
+    doc["features"]["image_generation"] = value(enabled);
+}
+
+fn revert_managed_capability_fields(doc: &mut DocumentMut, expected: &HashMap<String, String>) {
+    if let Some(want) = expected.get("web_search") {
+        if doc.get("web_search").and_then(|i| i.as_str()) == Some(want.as_str()) {
+            doc.as_table_mut().remove("web_search");
+        }
+    }
+    if let Some(want) = expected.get("tools_view_image") {
+        let live = doc
+            .get("tools")
+            .and_then(|i| i.get("view_image"))
+            .and_then(|i| i.as_bool())
+            .map(flag_str);
+        if live == Some(want.as_str()) {
+            if let Some(tools) = doc.get_mut("tools").and_then(|i| i.as_table_like_mut()) {
+                tools.remove("view_image");
+            }
+        }
+    }
+    if let Some(want) = expected.get("features_image_generation") {
+        let live = doc
+            .get("features")
+            .and_then(|i| i.get("image_generation"))
+            .and_then(|i| i.as_bool())
+            .map(flag_str);
+        if live == Some(want.as_str()) {
+            if let Some(features) = doc.get_mut("features").and_then(|i| i.as_table_like_mut()) {
+                features.remove("image_generation");
+            }
+        }
+    }
+}
+
+fn build_model_catalog(
+    models: &[(String, String)],
+    site_name: &str,
+    image_understanding: bool,
+) -> Value {
+    let modalities = if image_understanding {
+        json!(["text", "image"])
+    } else {
+        json!(["text"])
+    };
     let items: Vec<Value> = models
         .iter()
         .enumerate()
@@ -87,7 +169,7 @@ fn build_model_catalog(models: &[(String, String)], site_name: &str) -> Value {
                 "max_context_window": 128000,
                 "visibility": "list",
                 "supported_in_api": true,
-                "input_modalities": ["text"],
+                "input_modalities": modalities,
                 "priority": i + 1,
                 "default_reasoning_level": "medium",
                 "supported_reasoning_levels": [
@@ -157,11 +239,15 @@ pub fn apply(
             .or_insert(toml_edit::table())
             .as_table_mut()
             .ok_or_else(|| AppError::new("invalid_config", "provider table"))?;
-        table["name"] = value(&site.name);
+        apply_provider_display_name(table, &site.name, options.remote_compaction);
         table["base_url"] = value(&preview.codex_base_url);
         table["env_key"] = value(&env_key);
         table["wire_api"] = value("responses");
     }
+
+    apply_web_search(&mut doc, options.web_search);
+    apply_image_understanding(&mut doc, options.image_understanding);
+    apply_image_generation(&mut doc, options.image_generation);
 
     // Optional model catalog for in-app model switching
     if options.write_all_models {
@@ -170,7 +256,7 @@ pub fn apply(
         } else {
             options.catalog_models.clone()
         };
-        let catalog = build_model_catalog(&catalog_models, &site.name);
+        let catalog = build_model_catalog(&catalog_models, &site.name, options.image_understanding);
         let catalog_text = serde_json::to_string_pretty(&catalog)? + "\n";
         let codex_home = resolve_codex_home(codex_home_override)?;
         for existing in catalogs_to_backup(&doc, &catalog_path, &codex_home) {
@@ -250,6 +336,40 @@ pub fn apply(
     if let Some(effort) = &options.reasoning_effort {
         expected.insert("model_reasoning_effort".into(), effort.as_str().into());
     }
+    let provider_display_name = if options.remote_compaction {
+        REMOTE_COMPACTION_PROVIDER_NAME
+    } else {
+        site.name.as_str()
+    };
+    expected.insert("provider_display_name".into(), provider_display_name.into());
+    expected.insert(
+        "remote_compaction".into(),
+        if options.remote_compaction {
+            "on".into()
+        } else {
+            "off".into()
+        },
+    );
+    expected.insert(
+        "web_search".into(),
+        if options.web_search {
+            WEB_SEARCH_ENABLED.into()
+        } else {
+            WEB_SEARCH_DISABLED.into()
+        },
+    );
+    expected.insert(
+        "tools_view_image".into(),
+        flag_str(options.image_understanding).into(),
+    );
+    expected.insert(
+        "features_image_generation".into(),
+        flag_str(options.image_generation).into(),
+    );
+    expected.insert(
+        "capability_source".into(),
+        options.capability_source.as_str().into(),
+    );
     if options.write_all_models {
         expected.insert(
             "model_catalog_json".into(),
@@ -269,6 +389,38 @@ pub fn apply(
             Some(effort.as_str().into()),
         );
     }
+    live_summary.insert(
+        "provider_display_name".into(),
+        Some(provider_display_name.into()),
+    );
+    live_summary.insert(
+        "remote_compaction".into(),
+        Some(if options.remote_compaction {
+            "on".into()
+        } else {
+            "off".into()
+        }),
+    );
+    live_summary.insert(
+        "web_search".into(),
+        Some(if options.web_search {
+            WEB_SEARCH_ENABLED.into()
+        } else {
+            WEB_SEARCH_DISABLED.into()
+        }),
+    );
+    live_summary.insert(
+        "tools_view_image".into(),
+        Some(flag_str(options.image_understanding).into()),
+    );
+    live_summary.insert(
+        "features_image_generation".into(),
+        Some(flag_str(options.image_generation).into()),
+    );
+    live_summary.insert(
+        "capability_source".into(),
+        Some(options.capability_source.as_str().into()),
+    );
     if options.write_all_models {
         live_summary.insert(
             "model_catalog_json".into(),
@@ -352,6 +504,7 @@ pub fn surgical_revert(
                         doc.as_table_mut().remove("model_catalog_json");
                     }
                 }
+                revert_managed_capability_fields(&mut doc, &binding.expected_fields);
                 atomic_write(&cfg_path, doc.to_string().as_bytes(), false)?;
             }
         }
@@ -402,7 +555,41 @@ pub fn summary_from_config(doc: &DocumentMut) -> HashMap<String, Option<String>>
             if let Some(env_key) = table.get("env_key").and_then(|i| i.as_str()) {
                 out.insert("env_key".into(), Some(env_key.into()));
             }
+            if let Some(name) = table.get("name").and_then(|i| i.as_str()) {
+                out.insert("provider_display_name".into(), Some(name.into()));
+                out.insert(
+                    "remote_compaction".into(),
+                    Some(
+                        if name == REMOTE_COMPACTION_PROVIDER_NAME {
+                            "on"
+                        } else {
+                            "off"
+                        }
+                        .into(),
+                    ),
+                );
+            }
         }
+    }
+    if let Some(search) = doc.get("web_search").and_then(|i| i.as_str()) {
+        out.insert("web_search".into(), Some(search.into()));
+    }
+    if let Some(view_image) = doc
+        .get("tools")
+        .and_then(|v| v.get("view_image"))
+        .and_then(|i| i.as_bool())
+    {
+        out.insert("tools_view_image".into(), Some(flag_str(view_image).into()));
+    }
+    if let Some(image_gen) = doc
+        .get("features")
+        .and_then(|v| v.get("image_generation"))
+        .and_then(|i| i.as_bool())
+    {
+        out.insert(
+            "features_image_generation".into(),
+            Some(flag_str(image_gen).into()),
+        );
     }
     out
 }
@@ -578,6 +765,7 @@ wire_api = "responses"
             last_model_fetch_error: None,
             created_at: 1,
             updated_at: 1,
+            capabilities: Default::default(),
         };
         let bak = dir.path().join("bak");
         fs::create_dir_all(&bak).unwrap();
@@ -591,6 +779,79 @@ wire_api = "responses"
             out.expected_fields.get("base_url").map(String::as_str),
             Some("https://new.example.com/v1")
         );
+    }
+
+    #[test]
+    fn rewrite_preserves_capability_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = provider_id_for_site("s1");
+        fs::write(
+            dir.path().join("config.toml"),
+            format!(
+                r#"model = "gpt-4"
+model_provider = "{provider}"
+web_search = "disabled"
+
+[model_providers.{provider}]
+name = "OpenAI"
+base_url = "https://old.example.com/v1"
+env_key = "XIAOBAI_SITE_S1_API_KEY"
+wire_api = "responses"
+
+[tools]
+view_image = true
+
+[features]
+image_generation = false
+"#
+            ),
+        )
+        .unwrap();
+        let mut expected = HashMap::new();
+        expected.insert("base_url".into(), "https://old.example.com/v1".into());
+        let binding = TargetBinding {
+            target: TargetKind::Codex,
+            site_id: Some("s1".into()),
+            site_name_snapshot: "T".into(),
+            model_id: "gpt-4".into(),
+            provider_id: Some(provider.clone()),
+            key_fingerprint: "x".into(),
+            managed_paths: vec![],
+            managed_env_keys: vec![],
+            expected_fields: expected,
+            orphan: false,
+            applied_at: 1,
+            apply_record_id: None,
+        };
+        let site = SiteRow {
+            id: "s1".into(),
+            name: "T".into(),
+            base_url: "https://new.example.com".into(),
+            base_urls: vec!["https://new.example.com".into()],
+            api_key_encrypted: "x".into(),
+            key_prefix: "sk-xx".into(),
+            protocol: crate::domain::SiteProtocol::OpenaiCompatible,
+            claude_auth_key_style: crate::domain::ClaudeAuthKeyStyle::AnthropicAuthToken,
+            notes: None,
+            enabled: true,
+            sort_order: 0,
+            selected_model_id: Some("gpt-4".into()),
+            last_model_fetch_at: None,
+            last_model_fetch_latency_ms: None,
+            last_model_fetch_error: None,
+            created_at: 1,
+            updated_at: 1,
+            capabilities: Default::default(),
+        };
+        let bak = dir.path().join("bak");
+        fs::create_dir_all(&bak).unwrap();
+        rewrite_base_url(&site, &binding, Some(dir.path().to_str().unwrap()), &bak).unwrap();
+        let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+        assert!(text.contains("https://new.example.com/v1"));
+        assert!(text.contains("name = \"OpenAI\""));
+        assert!(text.contains("web_search = \"disabled\""));
+        assert!(text.contains("view_image = true"));
+        assert!(text.contains("image_generation = false"));
     }
 }
 
@@ -644,5 +905,131 @@ mod catalog_backup_tests {
         let copied = backup_root.join("models_catalog.json");
         assert!(copied.exists());
         assert!(fs::read_to_string(copied).unwrap().contains("kept"));
+    }
+}
+
+#[cfg(test)]
+mod capability_write_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn remote_compaction_writes_openai_display_name() {
+        let mut table = toml_edit::Table::new();
+        apply_provider_display_name(&mut table, "Relay", true);
+        assert_eq!(table["name"].as_str(), Some("OpenAI"));
+    }
+
+    #[test]
+    fn remote_compaction_off_uses_site_name() {
+        let mut table = toml_edit::Table::new();
+        apply_provider_display_name(&mut table, "Relay", false);
+        assert_eq!(table["name"].as_str(), Some("Relay"));
+    }
+
+    #[test]
+    fn web_search_writes_disabled_and_cached() {
+        let mut doc = DocumentMut::new();
+        apply_web_search(&mut doc, false);
+        assert_eq!(doc["web_search"].as_str(), Some("disabled"));
+        apply_web_search(&mut doc, true);
+        assert_eq!(doc["web_search"].as_str(), Some("cached"));
+    }
+
+    #[test]
+    fn image_understanding_sets_view_image() {
+        let mut doc = DocumentMut::new();
+        apply_image_understanding(&mut doc, true);
+        assert_eq!(doc["tools"]["view_image"].as_bool(), Some(true));
+        apply_image_understanding(&mut doc, false);
+        assert_eq!(doc["tools"]["view_image"].as_bool(), Some(false));
+    }
+
+    #[test]
+    fn image_generation_preserves_other_features() {
+        let mut doc = DocumentMut::new();
+        doc["features"]["fast_mode"] = value(true);
+        apply_image_generation(&mut doc, false);
+        assert_eq!(doc["features"]["image_generation"].as_bool(), Some(false));
+        assert_eq!(doc["features"]["fast_mode"].as_bool(), Some(true));
+        apply_image_generation(&mut doc, true);
+        assert_eq!(doc["features"]["image_generation"].as_bool(), Some(true));
+        assert_eq!(doc["features"]["fast_mode"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn catalog_modalities_follow_understanding() {
+        let off = build_model_catalog(&[("m".into(), "M".into())], "S", false);
+        assert_eq!(off["models"][0]["input_modalities"], json!(["text"]));
+        let on = build_model_catalog(&[("m".into(), "M".into())], "S", true);
+        assert_eq!(off["models"][0]["input_modalities"], json!(["text"]));
+        assert_eq!(
+            on["models"][0]["input_modalities"],
+            json!(["text", "image"])
+        );
+    }
+
+    #[test]
+    fn summary_reads_capability_fields() {
+        let provider = provider_id_for_site("s1");
+        let mut doc = DocumentMut::new();
+        doc["model_provider"] = value(&provider);
+        let providers = doc["model_providers"]
+            .or_insert(toml_edit::table())
+            .as_table_mut()
+            .unwrap();
+        let table = providers
+            .entry(&provider)
+            .or_insert(toml_edit::table())
+            .as_table_mut()
+            .unwrap();
+        apply_provider_display_name(table, "Relay", true);
+        apply_web_search(&mut doc, false);
+        apply_image_understanding(&mut doc, true);
+        apply_image_generation(&mut doc, false);
+        let sum = summary_from_config(&doc);
+        assert_eq!(
+            sum.get("remote_compaction").and_then(|v| v.as_deref()),
+            Some("on")
+        );
+        assert_eq!(
+            sum.get("provider_display_name").and_then(|v| v.as_deref()),
+            Some("OpenAI")
+        );
+        assert_eq!(
+            sum.get("web_search").and_then(|v| v.as_deref()),
+            Some("disabled")
+        );
+        assert_eq!(
+            sum.get("tools_view_image").and_then(|v| v.as_deref()),
+            Some("true")
+        );
+        assert_eq!(
+            sum.get("features_image_generation")
+                .and_then(|v| v.as_deref()),
+            Some("false")
+        );
+    }
+
+    #[test]
+    fn revert_removes_only_owned_capability_keys() {
+        let mut doc = DocumentMut::new();
+        apply_web_search(&mut doc, false);
+        apply_image_understanding(&mut doc, true);
+        apply_image_generation(&mut doc, false);
+        doc["features"]["fast_mode"] = value(true);
+        doc["web_search"] = value("live");
+        let mut expected = HashMap::new();
+        expected.insert("web_search".into(), "disabled".into());
+        expected.insert("tools_view_image".into(), "true".into());
+        expected.insert("features_image_generation".into(), "false".into());
+        revert_managed_capability_fields(&mut doc, &expected);
+        assert_eq!(doc["web_search"].as_str(), Some("live"));
+        assert!(doc.get("tools").and_then(|t| t.get("view_image")).is_none());
+        assert!(doc
+            .get("features")
+            .and_then(|t| t.get("image_generation"))
+            .is_none());
+        assert_eq!(doc["features"]["fast_mode"].as_bool(), Some(true));
     }
 }

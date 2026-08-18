@@ -151,6 +151,125 @@ describe("hydrateCodexForm", () => {
     expect(defaults.reasoning).toBe("xhigh");
   });
 
+  it("defaults platform capabilities off when nothing is written", () => {
+    const defaults = hydrateCodexForm(site({ id: "shuai", selectedModelId: "gpt-4.1" }), undefined);
+    expect(defaults.capabilitySource).toBe("site");
+    expect(defaults.remoteCompaction).toBe(false);
+    expect(defaults.imageUnderstanding).toBe(false);
+    expect(defaults.imageGeneration).toBe(false);
+    expect(defaults.webSearch).toBe(false);
+  });
+
+  it("defaults to follow-site when live has no capability_source", () => {
+    const defaults = hydrateCodexForm(
+      site({
+        id: "shuai",
+        selectedModelId: "gpt-4.1",
+        capabilities: { "codex-search": true },
+      }),
+      status({
+        kind: "codex",
+        appliedSiteId: "shuai",
+        liveSummary: { model: "gpt-5.4", web_search: "disabled" },
+      }),
+    );
+    expect(defaults.capabilitySource).toBe("site");
+    expect(defaults.webSearch).toBe(true);
+  });
+
+  it("follows current site presets when capability_source is site", () => {
+    const defaults = hydrateCodexForm(
+      site({
+        id: "shuai",
+        selectedModelId: "gpt-4.1",
+        capabilities: { "codex-vision": true, "codex-compact": true },
+      }),
+      status({
+        kind: "codex",
+        appliedSiteId: "shuai",
+        liveSummary: {
+          capability_source: "site",
+          remote_compaction: "off",
+          web_search: "disabled",
+        },
+      }),
+    );
+    expect(defaults.capabilitySource).toBe("site");
+    expect(defaults.remoteCompaction).toBe(true);
+    expect(defaults.imageUnderstanding).toBe(true);
+    expect(defaults.imageGeneration).toBe(false);
+    expect(defaults.webSearch).toBe(false);
+  });
+
+  it("reads platform capabilities from live summary", () => {
+    const defaults = hydrateCodexForm(
+      site({ id: "shuai", selectedModelId: "gpt-4.1" }),
+      status({
+        kind: "codex",
+        appliedSiteId: "shuai",
+        liveSummary: {
+          capability_source: "custom",
+          remote_compaction: "on",
+          tools_view_image: "true",
+          features_image_generation: "true",
+          web_search: "cached",
+        },
+      }),
+    );
+    expect(defaults.remoteCompaction).toBe(true);
+    expect(defaults.imageUnderstanding).toBe(true);
+    expect(defaults.imageGeneration).toBe(true);
+    expect(defaults.webSearch).toBe(true);
+  });
+
+  it("treats disabled web_search and false image flags as off", () => {
+    const defaults = hydrateCodexForm(
+      site({ id: "shuai" }),
+      status({
+        kind: "codex",
+        appliedSiteId: "shuai",
+        liveSummary: {
+          capability_source: "custom",
+          remote_compaction: "off",
+          tools_view_image: "false",
+          features_image_generation: "false",
+          web_search: "disabled",
+        },
+      }),
+    );
+    expect(defaults.remoteCompaction).toBe(false);
+    expect(defaults.imageUnderstanding).toBe(false);
+    expect(defaults.imageGeneration).toBe(false);
+    expect(defaults.webSearch).toBe(false);
+  });
+
+  it("falls back to OpenAI provider name for remote compaction", () => {
+    const defaults = hydrateCodexForm(
+      site({ id: "shuai", name: "Relay One" }),
+      status({
+        kind: "codex",
+        appliedSiteId: "shuai",
+        liveSummary: { capability_source: "custom", provider_display_name: "OpenAI" },
+      }),
+    );
+    expect(defaults.remoteCompaction).toBe(true);
+  });
+
+  it("treats a live config without web_search as search enabled", () => {
+    const defaults = hydrateCodexForm(
+      site({ id: "shuai" }),
+      status({
+        kind: "codex",
+        appliedSiteId: "shuai",
+        liveSummary: { capability_source: "custom", model: "gpt-5.4" },
+      }),
+    );
+    expect(defaults.webSearch).toBe(true);
+    expect(defaults.remoteCompaction).toBe(false);
+    expect(defaults.imageUnderstanding).toBe(false);
+    expect(defaults.imageGeneration).toBe(false);
+  });
+
   it("uses the site primary model when switching to another site", () => {
     const defaults = hydrateCodexForm(site({ id: "gptnb", selectedModelId: "gpt-4.1" }), live);
     expect(defaults.modelId).toBe("gpt-4.1");

@@ -1,3 +1,4 @@
+use crate::capabilities::{capabilities_equal, merge_codex_capabilities};
 use crate::crypto::Crypto;
 use crate::domain::{
     CreateSiteInput, DeepLinkSiteImportInput, DeepLinkSiteImportResult, SiteProtocol, SiteRow,
@@ -110,7 +111,14 @@ pub fn import_site_from_deep_link_conn(
         let notes_changed = notes
             .as_ref()
             .is_some_and(|incoming| existing.notes.as_ref() != Some(incoming));
-        if same_key && !name_changed && !notes_changed {
+        let next_caps = input
+            .capabilities
+            .as_ref()
+            .map(|incoming| merge_codex_capabilities(&existing.capabilities, incoming));
+        let caps_changed = next_caps
+            .as_ref()
+            .is_some_and(|caps| !capabilities_equal(caps, &existing.capabilities));
+        if same_key && !name_changed && !notes_changed && !caps_changed {
             return Ok(DeepLinkSiteImportResult {
                 site: existing.to_dto(),
                 created: false,
@@ -131,6 +139,7 @@ pub fn import_site_from_deep_link_conn(
                 } else {
                     Some(api_key.to_string())
                 },
+                capabilities: next_caps,
                 ..UpdateSiteInput::default()
             },
         )?;
@@ -154,6 +163,9 @@ pub fn import_site_from_deep_link_conn(
             protocol: Some(protocol.as_str().to_string()),
             claude_auth_key_style: None,
             notes,
+            capabilities: input.capabilities.as_ref().map(|incoming| {
+                merge_codex_capabilities(&Default::default(), incoming)
+            }),
         },
     )?;
 
@@ -198,6 +210,7 @@ mod tests {
             api_key: key.into(),
             protocol: protocol.map(|s| s.into()),
             notes: notes.map(|s| s.into()),
+            capabilities: None,
         }
     }
 
@@ -361,5 +374,41 @@ mod tests {
             let msg = err.to_string();
             assert!(!msg.is_empty(), "expected validation error");
         }
+    }
+
+    #[test]
+    fn deep_link_import_stores_codex_capabilities() {
+        let (conn, crypto) = setup();
+        let mut first_input = input(
+            "Relay",
+            &["https://a.example.com"],
+            "sk-example",
+            None,
+            None,
+        );
+        let mut caps = std::collections::HashMap::new();
+        caps.insert("codex-compact".into(), true);
+        caps.insert("codex-vision".into(), true);
+        first_input.capabilities = Some(caps);
+        let created = import_site_from_deep_link_conn(&conn, &crypto, first_input).unwrap();
+        assert!(created.created);
+        assert_eq!(created.site.capabilities.get("codex-compact"), Some(&true));
+        assert_eq!(created.site.capabilities.get("codex-vision"), Some(&true));
+        assert_eq!(created.site.capabilities.get("codex-search"), Some(&false));
+
+        let mut same = input("Relay", &["https://a.example.com"], "sk-example", None, None);
+        same.capabilities = None;
+        let reused = import_site_from_deep_link_conn(&conn, &crypto, same).unwrap();
+        assert!(reused.reused);
+        assert_eq!(reused.site.capabilities.get("codex-compact"), Some(&true));
+
+        let mut updated = input("Relay", &["https://a.example.com"], "sk-example", None, None);
+        let mut next = std::collections::HashMap::new();
+        next.insert("codex-search".into(), true);
+        updated.capabilities = Some(next);
+        let changed = import_site_from_deep_link_conn(&conn, &crypto, updated).unwrap();
+        assert!(!changed.created);
+        assert_eq!(changed.site.capabilities.get("codex-search"), Some(&true));
+        assert_eq!(changed.site.capabilities.get("codex-compact"), Some(&false));
     }
 }

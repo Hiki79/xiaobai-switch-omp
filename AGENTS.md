@@ -5,7 +5,7 @@
 ## 产品规则
 
 - 产品名：**XiaoBaiSwitch**（`com.github.licoy.xiaobai-switch.app`）
-- 领域单一事实来源（SSOT）是 **站点优先**：Base URL + API key → 模型 → 应用到目标
+- 领域单一事实来源（SSOT）是 **站点优先**：Base URL + API key → 模型 → 目标私有能力预设 → 应用到目标
 - 目标：Claude Code（`~/.claude/settings.json`）与 Codex（`~/.codex/` + 环境变量注入）
 - 应用数据根目录：`~/.xiaobai-switch/`（不是 Tauri 的 `app_data_dir`）
 
@@ -56,7 +56,8 @@
 - 当前目标仅 **Claude Code** 与 **Codex**；图标来自 `@lobehub/icons`（`ClaudeCode`、`Codex`）
 - 每个目标有各自的专用表单（不是共享的双目标复选框面板）
 - Claude 关键字段：鉴权 key 风格、默认模型、opus/sonnet/haiku 别名映射、effort 等级
-- Codex 关键字段：默认模型、写入全部模型目录开关、reasoning effort
+- Codex 关键字段：默认模型、写入全部模型目录开关、reasoning effort；平台能力默认跟随站点 `codex-compact` / `codex-vision` / `codex-imagegen` / `codex-search`，也可在应用中心自定义覆盖
+- 站点编辑含默认收起的「Codex私有能力」；`xiaobaiswitch://sites` 用同一套 kebab 键导入预设
 - 分区卡片复用 `SettingsGroup`，保持视觉语言一致
 
 ## Ant Design 约定

@@ -10,6 +10,8 @@ const payload: SiteDeepLinkPayload = {
   apiKey: "sk-example",
   protocol: "openai_compatible",
   notes: "hi",
+  capabilities: {},
+  hasCapabilityParams: false,
 };
 
 const site = {
@@ -65,6 +67,40 @@ describe("SiteDeepLinkConfirmContent", () => {
     for (const label of labels) {
       expect(label).toHaveClass("w-28");
     }
+  });
+
+  it("lists enabled Codex presets when the link carries capability params", () => {
+    render(
+      <SiteDeepLinkConfirmContent
+        payload={{
+          ...payload,
+          hasCapabilityParams: true,
+          capabilities: {
+            "codex-compact": true,
+            "codex-vision": true,
+            "codex-imagegen": false,
+            "codex-search": false,
+          },
+        }}
+        t={(key) =>
+          ({
+            "sites.name": "显示名称",
+            "sites.baseUrls": "线路",
+            "sites.baseUrlDefaultHint": "第一项为当前 / 默认线路",
+            "sites.protocol": "连接协议",
+            "sites.protocolOpenai": "OpenAI 兼容",
+            "sites.notes": "备注",
+            "sites.apiKey": "API Key",
+            "sites.codexPrivateCapabilities": "Codex私有能力",
+            "apply.remoteCompaction": "远程压缩",
+            "apply.imageUnderstanding": "识图支持",
+            "sites.deepLinkSecurityHint": "请确认来源可信后再导入以免密钥残留在浏览器历史中",
+          })[key] ?? key
+        }
+      />,
+    );
+    expect(screen.getByText("Codex私有能力")).toBeInTheDocument();
+    expect(screen.getByText("远程压缩 · 识图支持")).toBeInTheDocument();
   });
 });
 

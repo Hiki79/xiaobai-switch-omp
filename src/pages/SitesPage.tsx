@@ -65,6 +65,7 @@ export function SitesPage() {
       apiKey: pendingSiteForm.apiKey,
       protocol: pendingSiteForm.protocol,
       notes: pendingSiteForm.notes,
+      capabilities: pendingSiteForm.hasCapabilityParams ? pendingSiteForm.capabilities : undefined,
     });
     setFormOpen(true);
     setPendingSiteForm(null);

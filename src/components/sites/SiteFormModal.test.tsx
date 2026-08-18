@@ -68,6 +68,33 @@ describe("SiteFormModal base url list", () => {
     expect(inputs[1]).toHaveValue("https://b.example.com");
   });
 
+  it("keeps Codex-specific capabilities collapsed by default", () => {
+    render(
+      <Wrapper>
+        <SiteFormModal open site={null} onClose={() => undefined} />
+      </Wrapper>,
+    );
+
+    expect(screen.getByText("Codex私有能力")).toBeInTheDocument();
+    expect(document.querySelector(".ant-collapse-item-active")).toBeNull();
+    expect(screen.queryByText("识图支持")).not.toBeInTheDocument();
+  });
+
+  it("expands Codex capabilities when a preset is already on", () => {
+    render(
+      <Wrapper>
+        <SiteFormModal
+          open
+          site={{ ...sampleSite(), capabilities: { "codex-vision": true } }}
+          onClose={() => undefined}
+        />
+      </Wrapper>,
+    );
+
+    expect(document.querySelector(".ant-collapse-item-active")).not.toBeNull();
+    expect(screen.getByText("识图支持")).toBeInTheDocument();
+  });
+
   it("prefills create form from a deep-link payload", () => {
     render(
       <Wrapper>

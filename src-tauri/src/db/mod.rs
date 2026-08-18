@@ -129,6 +129,12 @@ CREATE INDEX IF NOT EXISTS idx_target_bindings_orphan ON target_bindings(orphan)
         "base_urls_json",
         "ALTER TABLE sites ADD COLUMN base_urls_json TEXT",
     )?;
+    ensure_column(
+        conn,
+        "sites",
+        "capabilities_json",
+        "ALTER TABLE sites ADD COLUMN capabilities_json TEXT",
+    )?;
     backfill_base_urls(conn)
 }
 

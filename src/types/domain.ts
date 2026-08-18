@@ -11,6 +11,11 @@ export type ProxyProtocol = "http" | "https" | "socks5";
 
 export type ApplyStatus = "applied" | "stale" | "orphan" | "not_applied" | "failed";
 
+/** Kebab capability flags shared by site JSON and xiaobaiswitch:// query keys. */
+export type SiteCapabilities = Record<string, boolean>;
+
+export type CodexCapabilitySource = "site" | "custom";
+
 export interface AppError {
   code:
     | "network"
@@ -49,6 +54,7 @@ export interface Site {
   lastModelFetchError: string | null;
   createdAt: number;
   updatedAt: number;
+  capabilities?: SiteCapabilities;
 }
 
 export interface SiteModel {
@@ -67,6 +73,7 @@ export interface DeepLinkSiteImportInput {
   apiKey: string;
   protocol?: SiteProtocol;
   notes?: string | null;
+  capabilities?: SiteCapabilities;
 }
 
 export interface DeepLinkSiteImportResult {
@@ -84,6 +91,7 @@ export interface CreateSiteInput {
   protocol?: SiteProtocol;
   claudeAuthKeyStyle?: ClaudeAuthKeyStyle;
   notes?: string | null;
+  capabilities?: SiteCapabilities;
 }
 
 export interface UpdateSiteInput {
@@ -97,6 +105,7 @@ export interface UpdateSiteInput {
   enabled?: boolean;
   selectedModelId?: string | null;
   sortOrder?: number;
+  capabilities?: SiteCapabilities;
 }
 
 export interface FetchModelsResult {
@@ -145,6 +154,16 @@ export interface ApplyRequest {
   /** Write site model list into Codex model catalog for switching */
   codexWriteAllModels?: boolean;
   codexReasoningEffort?: CodexReasoningEffort | null;
+  /** Codex: enable remote history compaction for the current provider */
+  codexRemoteCompaction?: boolean;
+  /** Codex: allow sending local images to the model */
+  codexImageUnderstanding?: boolean;
+  /** Codex: allow the hosted image generation tool */
+  codexImageGeneration?: boolean;
+  /** Codex: allow the hosted web_search tool */
+  codexWebSearch?: boolean;
+  /** `site` reads the site preset; `custom` uses the four bools above. */
+  codexCapabilitySource?: CodexCapabilitySource;
 }
 
 export interface ApplyTargetResult {

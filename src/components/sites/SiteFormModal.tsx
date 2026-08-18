@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
-import { App, Form, Input, Modal, Select } from "antd";
+import { App, Collapse, Form, Input, Modal, Select } from "antd";
 import { useTranslation } from "react-i18next";
-import type { Site, SiteProtocol } from "@/types/domain";
+import type { Site, SiteCapabilities, SiteProtocol } from "@/types/domain";
 import { useSiteStore } from "@/stores";
 import { UrlWritePreviewIcon } from "./UrlWritePreview";
 import { BaseUrlListInput } from "./BaseUrlListInput";
 import { isAppError } from "@/lib/invoke";
 import { invalidateSiteIconCache } from "@/lib/siteIcon";
 import { normalizeBaseUrls, siteBaseUrls } from "@/lib/urlNormalize";
+import {
+  anyCodexCapabilityOn,
+  capabilitiesFromCodexFlags,
+  codexFlagsFromCapabilities,
+  EMPTY_CODEX_FLAGS,
+  mergeCodexCapabilities,
+  type CodexCapabilityFlags,
+} from "@/lib/siteCapabilities";
+import { CodexCapabilitySwitchList } from "@/components/apply/CodexCapabilitySwitchList";
 
 export interface SiteFormInitialValues {
   name?: string;
@@ -15,6 +24,7 @@ export interface SiteFormInitialValues {
   apiKey?: string | null;
   protocol?: SiteProtocol;
   notes?: string | null;
+  capabilities?: SiteCapabilities;
 }
 
 interface Props {
@@ -32,11 +42,17 @@ export function SiteFormModal({ open, site, initialValues, onClose, onSaved }: P
   const updateSite = useSiteStore((s) => s.updateSite);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [codexFlags, setCodexFlags] = useState<CodexCapabilityFlags>(EMPTY_CODEX_FLAGS);
+  const [capOpen, setCapOpen] = useState<string[]>([]);
   const watchedUrls = Form.useWatch("baseUrls", form) as string[] | undefined;
   const previewUrl = watchedUrls?.find((u) => String(u ?? "").trim()) ?? "";
 
   useEffect(() => {
     if (!open) return;
+    const caps = site?.capabilities ?? initialValues?.capabilities ?? {};
+    const flags = codexFlagsFromCapabilities(caps);
+    setCodexFlags(flags);
+    setCapOpen(anyCodexCapabilityOn(caps) ? ["codex"] : []);
     if (site) {
       form.setFieldsValue({
         name: site.name,
@@ -61,6 +77,10 @@ export function SiteFormModal({ open, site, initialValues, onClose, onSaved }: P
     try {
       const values = await form.validateFields();
       const baseUrls = normalizeBaseUrls(values.baseUrls as string[]);
+      const capabilities = mergeCodexCapabilities(
+        site?.capabilities ?? initialValues?.capabilities ?? {},
+        capabilitiesFromCodexFlags(codexFlags),
+      );
       setSaving(true);
       let saved: Site;
       const isCreate = !site;
@@ -72,6 +92,7 @@ export function SiteFormModal({ open, site, initialValues, onClose, onSaved }: P
           apiKey: values.apiKey || null,
           protocol: values.protocol as SiteProtocol,
           notes: values.notes || null,
+          capabilities,
         });
         invalidateSiteIconCache(site.id);
       } else {
@@ -86,6 +107,7 @@ export function SiteFormModal({ open, site, initialValues, onClose, onSaved }: P
           apiKey: values.apiKey,
           protocol: values.protocol,
           notes: values.notes || null,
+          capabilities,
         });
       }
       message.success(isCreate ? t("sites.createSuccess") : t("sites.updateSuccess"));
@@ -147,6 +169,20 @@ export function SiteFormModal({ open, site, initialValues, onClose, onSaved }: P
         <Form.Item name="notes" label={t("sites.notes")}>
           <Input.TextArea rows={2} allowClear />
         </Form.Item>
+        <Collapse
+          size="small"
+          activeKey={capOpen}
+          onChange={(keys) => setCapOpen(Array.isArray(keys) ? keys.map(String) : [String(keys)])}
+          items={[
+            {
+              key: "codex",
+              label: t("sites.codexPrivateCapabilities"),
+              children: (
+                <CodexCapabilitySwitchList value={codexFlags} onChange={setCodexFlags} />
+              ),
+            },
+          ]}
+        />
       </Form>
     </Modal>
   );

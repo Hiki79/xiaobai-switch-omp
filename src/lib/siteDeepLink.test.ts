@@ -12,6 +12,8 @@ describe("parseSiteDeepLink", () => {
       apiKey: "sk-test",
       protocol: "openai_compatible",
       notes: "hi",
+      capabilities: {},
+      hasCapabilityParams: false,
     });
   });
 
@@ -25,6 +27,8 @@ describe("parseSiteDeepLink", () => {
       apiKey: "sk-ant",
       protocol: "anthropic",
       notes: null,
+      capabilities: {},
+      hasCapabilityParams: false,
     });
   });
 
@@ -97,6 +101,8 @@ describe("parseSiteDeepLink", () => {
       apiKey: "sk-test",
       protocol: "anthropic",
       notes: "n",
+      capabilities: {},
+      hasCapabilityParams: false,
     });
     expect(parseSiteDeepLink(built)).toEqual({
       name: "Relay",
@@ -104,6 +110,43 @@ describe("parseSiteDeepLink", () => {
       apiKey: "sk-test",
       protocol: "anthropic",
       notes: "n",
+      capabilities: {},
+      hasCapabilityParams: false,
     });
+  });
+
+  it("parses Codex capability presets and fills missing known keys", () => {
+    const payload = parseSiteDeepLink(
+      "xiaobaiswitch://sites?name=Relay&baseurls=https://a.example.com&codex-compact=1&codex-vision=1",
+    );
+    expect(payload?.hasCapabilityParams).toBe(true);
+    expect(payload?.capabilities).toEqual({
+      "codex-compact": true,
+      "codex-vision": true,
+      "codex-imagegen": false,
+      "codex-search": false,
+    });
+  });
+
+  it("round-trips enabled capability flags", () => {
+    const built = buildSiteDeepLink({
+      name: "Relay",
+      baseUrls: ["https://a.example.com"],
+      apiKey: null,
+      protocol: "openai_compatible",
+      notes: null,
+      capabilities: {
+        "codex-compact": true,
+        "codex-vision": true,
+        "codex-imagegen": false,
+        "codex-search": false,
+      },
+      hasCapabilityParams: true,
+    });
+    expect(built).toContain("codex-compact=1");
+    expect(built).toContain("codex-vision=1");
+    expect(built).not.toContain("codex-imagegen");
+    expect(parseSiteDeepLink(built)?.capabilities["codex-compact"]).toBe(true);
+    expect(parseSiteDeepLink(built)?.capabilities["codex-search"]).toBe(false);
   });
 });

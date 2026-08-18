@@ -58,6 +58,32 @@ describe("siteStore fetchModels", () => {
     ).toBe(true);
   });
 
+  it("persists Codex capability presets on create, update, and import", async () => {
+    const created = await useSiteStore.getState().createSite({
+      name: "Relay",
+      baseUrl: "https://api.example.com",
+      apiKey: "sk-test",
+      capabilities: { "codex-vision": true },
+    });
+    expect(created.capabilities?.["codex-vision"]).toBe(true);
+
+    const updated = await useSiteStore.getState().updateSite(created.id, {
+      capabilities: { "codex-search": true, "codex-vision": false },
+    });
+    expect(updated.capabilities?.["codex-search"]).toBe(true);
+    expect(updated.capabilities?.["codex-vision"]).toBe(false);
+
+    const imported = await useSiteStore.getState().importSiteFromDeepLink({
+      name: "Other",
+      baseUrls: ["https://other.example.com"],
+      apiKey: "sk-other",
+      capabilities: { "codex-compact": true, "codex-vision": true },
+    });
+    expect(imported.created).toBe(true);
+    expect(imported.site.capabilities?.["codex-compact"]).toBe(true);
+    expect(imported.site.capabilities?.["codex-vision"]).toBe(true);
+  });
+
   it("imports a deep-link site and reuses the same protocol + URL set", async () => {
     const created = await useSiteStore.getState().importSiteFromDeepLink({
       name: "Relay",
