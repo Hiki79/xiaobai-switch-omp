@@ -193,6 +193,17 @@ pub struct FetchModelsResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ModelProbeResult {
+    pub model_id: String,
+    pub ok: bool,
+    pub latency_ms: u64,
+    pub status: Option<u16>,
+    pub error: Option<String>,
+    pub endpoint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TargetLiveStatus {
     pub kind: TargetKind,
     pub installed: bool,

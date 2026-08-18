@@ -96,19 +96,45 @@ describe("SitesPage", () => {
 
     const addBtn = screen.getByRole("button", { name: "手动添加" });
     const multiBtn = screen.getByRole("button", { name: "多选" });
+    const testBtn = screen.getByRole("button", { name: "测试" });
     const clearBtn = screen.getByRole("button", { name: /清\s*空/ });
     expect(addBtn.className).toMatch(/ant-btn-sm/);
     expect(multiBtn.className).toMatch(/ant-btn-sm/);
+    expect(testBtn.className).toMatch(/ant-btn-sm/);
     expect(clearBtn.querySelector("svg.lucide")).toBeTruthy();
     expect(addBtn.compareDocumentPosition(screen.getByText("主模型")) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     expect(addBtn.compareDocumentPosition(multiBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(multiBtn.compareDocumentPosition(clearBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(multiBtn.compareDocumentPosition(testBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(testBtn.compareDocumentPosition(clearBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     const applyBtn = screen.getByRole("button", { name: /去 Claude Code 应用|去 Codex 应用/ });
     expect(applyBtn.className).toMatch(/ant-btn-sm/);
     const detailName = document.querySelector(".text-base.font-medium");
     expect(detailName?.textContent).toBe("Relay One");
     expect(applyBtn.compareDocumentPosition(detailName as Node) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+
+  it("opens the test-models modal from the toolbar", async () => {
+    await act(async () => {
+      await seedSite();
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "测试" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "测试" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("测试模型")).toBeInTheDocument();
+    expect(within(dialog).getByRole("checkbox", { name: "全选" })).toBeChecked();
+    expect(within(dialog).getByRole("button", { name: /立\s*即\s*测\s*试/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /取\s*消/ })).toBeInTheDocument();
   });
 
   it("opens a modal to add a model manually", async () => {
@@ -178,6 +204,7 @@ describe("SitesPage", () => {
 
     const hint = await screen.findByText("暂无模型，请先拉取或手动添加");
     expect(hint.parentElement).toHaveClass("justify-center");
+    expect(screen.getByRole("button", { name: "测试" })).toBeDisabled();
 
     const fetchInEmpty = hint.parentElement?.querySelector("button");
     expect(fetchInEmpty).toBeTruthy();

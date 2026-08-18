@@ -12,6 +12,7 @@ mod error;
 mod http_client;
 mod lock;
 mod macos_scheme;
+mod model_probe;
 mod models_fetch;
 mod paths;
 mod redact;
@@ -113,6 +114,7 @@ pub fn run() {
             commands::list_site_models,
             commands::delete_site_model,
             commands::clear_site_models,
+            commands::probe_site_model,
             commands::list_target_status,
             commands::detect_cli_tools,
             commands::cleanup_orphan_target,

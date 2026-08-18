@@ -10,6 +10,7 @@ import type {
   DeepLinkSiteImportResult,
   FetchModelsResult,
   HttpBytesResult,
+  ModelProbeResult,
   Site,
   SiteModel,
   SwitchRouteResult,
@@ -535,6 +536,47 @@ export async function handleBrowserCommand<T>(
         error: null,
       }));
       return results as T;
+    }
+    case "probe_site_model": {
+      const siteId = args?.siteId as string;
+      const modelId = String(args?.modelId ?? "").trim();
+      const site = sites.find((s) => s.id === siteId);
+      if (!site) throw { code: "not_found", message: "Site not found" };
+      if (!modelId) throw { code: "validation_failed", message: "model id required" };
+      await new Promise((r) => setTimeout(r, 5));
+      const endpoint = `${normalizeBaseUrl(site.baseUrl).codexBaseUrl}/chat/completions`;
+      if (/fail-long/i.test(modelId)) {
+        const result: ModelProbeResult = {
+          modelId,
+          ok: false,
+          latencyMs: 8,
+          status: 400,
+          error:
+            "mock upstream rejected this model because the requested identifier is not available on this gateway and the provider returned a very long diagnostic payload",
+          endpoint,
+        };
+        return result as T;
+      }
+      if (/fail/i.test(modelId)) {
+        const result: ModelProbeResult = {
+          modelId,
+          ok: false,
+          latencyMs: 8,
+          status: 400,
+          error: "mock upstream rejected this model",
+          endpoint,
+        };
+        return result as T;
+      }
+      const result: ModelProbeResult = {
+        modelId,
+        ok: true,
+        latencyMs: 12,
+        status: 200,
+        error: null,
+        endpoint,
+      };
+      return result as T;
     }
     case "switch_site_route": {
       const siteId = args?.siteId as string;

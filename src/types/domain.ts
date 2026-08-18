@@ -220,6 +220,15 @@ export interface UrlProbeResult {
   error?: string | null;
 }
 
+export interface ModelProbeResult {
+  modelId: string;
+  ok: boolean;
+  latencyMs: number;
+  status?: number | null;
+  error?: string | null;
+  endpoint: string;
+}
+
 export interface HttpBytesResult {
   status: number;
   contentType: string;

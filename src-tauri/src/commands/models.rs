@@ -1,5 +1,5 @@
-use crate::domain::{FetchModelsResult, SiteModelDto};
-use crate::error::AppResult;
+use crate::domain::{FetchModelsResult, ModelProbeResult, SiteModelDto};
+use crate::error::{AppError, AppResult};
 use crate::repo;
 use crate::state::AppState;
 use tauri::State;
@@ -68,4 +68,26 @@ pub fn delete_site_model(
         repo::site::delete_model(c, &site_id, &model_id)?;
         Ok(repo::site::get_site(c, &site_id)?.to_dto())
     })
+}
+
+#[tauri::command]
+pub async fn probe_site_model(
+    state: State<'_, AppState>,
+    site_id: String,
+    model_id: String,
+) -> AppResult<ModelProbeResult> {
+    let model_id = model_id.trim().to_string();
+    if model_id.is_empty() {
+        return Err(AppError::new("validation_failed", "model id required"));
+    }
+    let (site, api_key, settings) = state.db.with_conn(|c| {
+        let site = repo::site::get_site(c, &site_id)?;
+        let key = state.crypto.decrypt(&site.api_key_encrypted)?;
+        let settings = repo::settings::get_settings(c)?;
+        Ok((site, key, settings))
+    })?;
+    if api_key.trim().is_empty() {
+        return Err(AppError::new("validation_failed", "api key required"));
+    }
+    crate::model_probe::probe_model(&site, &api_key, &model_id, &settings).await
 }

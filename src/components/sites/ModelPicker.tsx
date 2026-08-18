@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { App, Button, Checkbox, Input, theme } from "antd";
-import { CheckSquare, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { App, Button, Checkbox, Input, theme, Tooltip } from "antd";
+import { CheckSquare, FlaskConical, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Site, SiteModel } from "@/types/domain";
 import { useSiteStore } from "@/stores";
 import { isAppError } from "@/lib/invoke";
 import { groupModelsByPrefix } from "@/lib/modelPrefix";
 import { ModelCountBadge, ModelTag } from "@/components/sites/ModelTag";
+import { TestModelsModal } from "@/components/sites/TestModelsModal";
 
 interface Props {
   site: Site;
@@ -37,6 +38,7 @@ export function ModelPicker({
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deletingSelected, setDeletingSelected] = useState(false);
+  const [testOpen, setTestOpen] = useState(false);
   const modelsFromStore = useSiteStore((s) => s.modelsBySite[site.id]);
   const models = modelsFromStore ?? modelsProp;
 
@@ -49,6 +51,7 @@ export function ModelPicker({
   useEffect(() => {
     setSelecting(false);
     setSelectedIds(new Set());
+    setTestOpen(false);
   }, [site.id]);
 
   useEffect(() => {
@@ -215,6 +218,18 @@ export function ModelPicker({
         >
           {selecting ? t("sites.multiSelectModelsDone") : t("sites.multiSelectModels")}
         </Button>
+        <Tooltip title={!site.hasKey ? t("sites.testNoKey") : undefined}>
+          <span>
+            <Button
+              size="small"
+              icon={<FlaskConical size={12} />}
+              disabled={models.length === 0 || !site.hasKey}
+              onClick={() => setTestOpen(true)}
+            >
+              {t("sites.testModels")}
+            </Button>
+          </span>
+        </Tooltip>
         <Button
           size="small"
           danger
@@ -361,6 +376,12 @@ export function ModelPicker({
           </div>
         )}
       </div>
+      <TestModelsModal
+        open={testOpen}
+        site={site}
+        models={models}
+        onClose={() => setTestOpen(false)}
+      />
     </div>
   );
 }
