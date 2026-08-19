@@ -115,6 +115,7 @@ describe("shipped GitHub workflows", () => {
     expect(release).toMatch(/TAURI_SIGNING_PRIVATE_KEY/);
     expect(release).toMatch(/includeUpdaterJson:\s*false/);
     expect(release).toMatch(/scripts\/generate-updater-manifest\.mjs/);
+    expect(release).toMatch(/scripts\/validate-updater-signing-secret\.mjs/);
   });
 
   it("does not use the PowerShell Join-Path trailing-comma pitfall in the portable zip step", () => {

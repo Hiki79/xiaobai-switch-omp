@@ -42,6 +42,12 @@ jobs:
           fi
           echo "Version $TAG is consistent"
 
+      - name: Validate updater signing secrets
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: node scripts/validate-updater-signing-secret.mjs
+
   release:
     name: Build (${{ matrix.target }})
     needs: [check-version]
