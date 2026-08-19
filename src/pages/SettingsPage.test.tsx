@@ -185,4 +185,23 @@ describe("SettingsPage about", () => {
 
     open.mockRestore();
   });
+
+  it("shows update check controls and persists auto-check", async () => {
+    render(
+      <Wrapper>
+        <SettingsPage />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("自动检查更新")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "检查更新" })).toBeInTheDocument();
+    expect(useSettingsStore.getState().settings.autoCheckUpdate).toBe(true);
+
+    fireEvent.click(screen.getByRole("switch"));
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.autoCheckUpdate).toBe(false);
+    });
+  });
 });

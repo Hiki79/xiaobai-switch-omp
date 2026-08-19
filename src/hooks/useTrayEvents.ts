@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { App } from "antd";
 import { useTranslation } from "react-i18next";
 import { invoke, isTauri } from "@/lib/invoke";
 import { useApplyStore, useUIStore } from "@/stores";
+import { useUpdateChecker } from "@/hooks/useUpdateChecker";
 import type { ApplyTargetResult } from "@/types/domain";
 
 export type TrayNavigate = "apply" | "settings";
@@ -21,6 +22,8 @@ async function listenSafe<T>(event: string, cb: (payload: T) => void): Promise<(
 export function useTrayEvents() {
   const { message } = App.useApp();
   const { t } = useTranslation();
+  const { checkForUpdate } = useUpdateChecker();
+  const checkUpdateInFlight = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,13 +65,30 @@ export function useTrayEvents() {
         return;
       }
       unlisteners.push(stopFailed);
+
+      const stopUpdate = await listenSafe("tray-check-update", () => {
+        if (checkUpdateInFlight.current) return;
+        checkUpdateInFlight.current = true;
+        void checkForUpdate()
+          .catch((error) => {
+            console.warn("Failed to check update from tray:", error);
+          })
+          .finally(() => {
+            checkUpdateInFlight.current = false;
+          });
+      });
+      if (cancelled) {
+        stopUpdate();
+        return;
+      }
+      unlisteners.push(stopUpdate);
     })();
 
     return () => {
       cancelled = true;
       unlisteners.forEach((fn) => fn());
     };
-  }, [message, t]);
+  }, [checkForUpdate, message, t]);
 
   useEffect(() => {
     if (!isTauri()) return;

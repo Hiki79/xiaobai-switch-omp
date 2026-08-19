@@ -194,6 +194,8 @@ export interface AppSettings {
   codexEnvInjectMode: "auto" | "shell_rc" | "user_env" | "file_only";
   forceExclusiveClaudeAuthKey: boolean;
   autoCheckUpdate: boolean;
+  /** Auto update check interval in minutes. Default 60. */
+  updateCheckInterval: number;
   /** Max backup copies kept per target. Default 30. */
   maxBackupCopies: number;
   proxyMode: ProxyMode;

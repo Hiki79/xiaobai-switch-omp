@@ -1,6 +1,6 @@
 use crate::domain::{
-    clamp_max_backup_copies, clamp_route_probe_ttl, normalize_proxy_mode, normalize_proxy_protocol,
-    AppSettings,
+    clamp_max_backup_copies, clamp_route_probe_ttl, clamp_update_check_interval,
+    normalize_proxy_mode, normalize_proxy_protocol, AppSettings,
 };
 use crate::error::{AppError, AppResult};
 use rusqlite::Connection;
@@ -8,6 +8,7 @@ use rusqlite::Connection;
 fn normalize(mut s: AppSettings) -> AppSettings {
     s.max_backup_copies = clamp_max_backup_copies(s.max_backup_copies);
     s.route_probe_ttl_minutes = clamp_route_probe_ttl(s.route_probe_ttl_minutes);
+    s.update_check_interval = clamp_update_check_interval(s.update_check_interval);
     s.proxy_mode = normalize_proxy_mode(&s.proxy_mode);
     s.proxy_protocol = normalize_proxy_protocol(&s.proxy_protocol);
     if let Some(host) = s.proxy_host.as_mut() {
@@ -90,6 +91,7 @@ mod tests {
         assert_eq!(s.proxy_mode, "system");
         assert_eq!(s.proxy_protocol, "http");
         assert_eq!(s.route_probe_ttl_minutes, 10);
+        assert_eq!(s.update_check_interval, 60);
         assert_eq!(s.language, "en-US");
         assert!(s.close_to_tray);
         assert!(!s.start_in_tray);
@@ -126,5 +128,16 @@ mod tests {
         let merged =
             merge_settings(&conn, serde_json::json!({ "routeProbeTtlMinutes": 99999 })).unwrap();
         assert_eq!(merged.route_probe_ttl_minutes, 1440);
+    }
+
+    #[test]
+    fn update_check_interval_is_clamped() {
+        let conn = conn();
+        let merged =
+            merge_settings(&conn, serde_json::json!({ "updateCheckInterval": 0 })).unwrap();
+        assert_eq!(merged.update_check_interval, 1);
+        let merged =
+            merge_settings(&conn, serde_json::json!({ "updateCheckInterval": 99999 })).unwrap();
+        assert_eq!(merged.update_check_interval, 1440);
     }
 }

@@ -108,9 +108,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "XiaoBaiSwitch ${{ github.ref_name }}"
+          includeUpdaterJson: false
           releaseBody: |
             ## XiaoBaiSwitch ${{ github.ref_name }}
 
@@ -171,6 +174,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate updater manifest
+        run: node scripts/generate-updater-manifest.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish draft release
         uses: softprops/action-gh-release@v2
         with:

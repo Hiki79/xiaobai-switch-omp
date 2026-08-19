@@ -13,3 +13,6 @@ coverage
 .env
 .env.*
 !*.env.example
+.updater-private.key
+.updater-private.key.pub
+.updater-signing.env

@@ -12,6 +12,7 @@ import { useSettingsStore, useUIStore, type AppPage } from "@/stores";
 import { useResolvedDarkMode } from "@/hooks/useResolvedDarkMode";
 import { useSiteDeepLink } from "@/hooks/useSiteDeepLink";
 import { useTrayEvents } from "@/hooks/useTrayEvents";
+import { useAutoCheckUpdate } from "@/hooks/useUpdateChecker";
 import { invoke, isTauri } from "@/lib/invoke";
 import "./i18n";
 
@@ -90,6 +91,7 @@ function AppInner({ isDark }: { isDark: boolean }) {
   const rootRef = useRef<HTMLDivElement>(null);
   useSiteDeepLink({ modal, message });
   useTrayEvents();
+  useAutoCheckUpdate();
 
   useEffect(() => {
     void fetchSettings()

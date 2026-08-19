@@ -532,5 +532,7 @@ mod tests {
         }"##;
         let s: AppSettings = serde_json::from_str(json).unwrap();
         assert_eq!(s.max_backup_copies, 30);
+        assert_eq!(s.update_check_interval, 60);
+        assert!(s.auto_check_update);
     }
 }

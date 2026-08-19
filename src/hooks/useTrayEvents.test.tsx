@@ -8,6 +8,11 @@ import { useTrayEvents } from "./useTrayEvents";
 import "@/i18n";
 
 const listeners = new Map<string, (payload: unknown) => void>();
+const checkForUpdate = vi.fn(async () => false);
+
+vi.mock("@/hooks/useUpdateChecker", () => ({
+  useUpdateChecker: () => ({ checkForUpdate }),
+}));
 
 vi.mock("@/lib/invoke", async () => {
   const actual = await vi.importActual<typeof import("@/lib/invoke")>("@/lib/invoke");
@@ -38,6 +43,7 @@ function Wrapper({ children }: { children: ReactNode }) {
 describe("useTrayEvents", () => {
   beforeEach(() => {
     listeners.clear();
+    checkForUpdate.mockClear();
     useUIStore.setState({ activePage: "sites" });
     useApplyStore.setState({
       loadStatus: vi.fn(async () => undefined),
@@ -81,6 +87,19 @@ describe("useTrayEvents", () => {
     });
     await waitFor(() => {
       expect(loadStatus).toHaveBeenCalledWith({ force: true });
+    });
+  });
+
+  it("checks for updates from the tray", async () => {
+    renderHook(() => useTrayEvents(), { wrapper: Wrapper });
+    await waitFor(() => {
+      expect(listeners.has("tray-check-update")).toBe(true);
+    });
+    act(() => {
+      listeners.get("tray-check-update")?.(undefined);
+    });
+    await waitFor(() => {
+      expect(checkForUpdate).toHaveBeenCalled();
     });
   });
 });

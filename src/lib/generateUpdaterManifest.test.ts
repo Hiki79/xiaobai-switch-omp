@@ -1,0 +1,87 @@
+import { describe, expect, it } from "vitest";
+
+const manifestModule =
+  // @ts-expect-error The workflow helper is native ESM without TypeScript declarations.
+  await import("../../scripts/generate-updater-manifest.mjs");
+const { buildUpdaterManifest, classifySignature } = manifestModule;
+
+function assetPair(name: string, id: number) {
+  return [
+    { id, name },
+    { id: id + 1, name: `${name}.sig` },
+  ];
+}
+
+const assets = [
+  ...assetPair("XiaoBaiSwitch_aarch64.app.tar.gz", 1),
+  ...assetPair("XiaoBaiSwitch_x64.app.tar.gz", 3),
+  ...assetPair("XiaoBaiSwitch_0.0.1_arm64-setup.exe", 5),
+  ...assetPair("XiaoBaiSwitch_0.0.1_x64_en-US.msi", 7),
+  ...assetPair("XiaoBaiSwitch_0.0.1_x64-setup.exe", 9),
+];
+
+const signatures = new Map(
+  assets
+    .filter(({ name }) => name.endsWith(".sig"))
+    .map(({ name }) => [name, `signature:${name}`]),
+);
+
+describe("updater manifest generation", () => {
+  it("classifies supported updater signature assets", () => {
+    expect(classifySignature("XiaoBaiSwitch_aarch64.app.tar.gz.sig")).toEqual({
+      os: "darwin",
+      arch: "aarch64",
+      bundle: "app",
+    });
+    expect(classifySignature("XiaoBaiSwitch_0.0.1_x64-setup.exe.sig")).toEqual({
+      os: "windows",
+      arch: "x86_64",
+      bundle: "nsis",
+    });
+    expect(classifySignature("XiaoBaiSwitch_v0.0.1_windows-x64-portable.zip.sig")).toBeNull();
+  });
+
+  it("builds one complete updater manifest after all platform uploads", () => {
+    const manifest = buildUpdaterManifest({
+      version: "0.0.1",
+      notes: "release notes",
+      pubDate: "2026-08-19T15:00:00.000Z",
+      repository: "Licoy/xiaobai-switch",
+      serverUrl: "https://github.com",
+      tag: "v0.0.1",
+      assets,
+      signatures,
+    });
+
+    expect(manifest.version).toBe("0.0.1");
+    expect(manifest.notes).toBe("release notes");
+    expect(manifest.platforms["windows-aarch64"].url).toBe(
+      "https://github.com/Licoy/xiaobai-switch/releases/download/v0.0.1/XiaoBaiSwitch_0.0.1_arm64-setup.exe",
+    );
+    expect(manifest.platforms["windows-aarch64-nsis"].signature).toBe(
+      "signature:XiaoBaiSwitch_0.0.1_arm64-setup.exe.sig",
+    );
+    expect(manifest.platforms["darwin-x86_64-app"].url).toBe(
+      "https://github.com/Licoy/xiaobai-switch/releases/download/v0.0.1/XiaoBaiSwitch_x64.app.tar.gz",
+    );
+    expect(manifest.platforms["windows-x86_64"].url).toBe(
+      "https://github.com/Licoy/xiaobai-switch/releases/download/v0.0.1/XiaoBaiSwitch_0.0.1_x64_en-US.msi",
+    );
+    expect(Object.keys(manifest.platforms)).toHaveLength(9);
+  });
+
+  it("fails instead of publishing an incomplete updater manifest", () => {
+    expect(() =>
+      buildUpdaterManifest({
+        version: "0.0.1",
+        notes: "",
+        pubDate: "2026-08-19T15:00:00.000Z",
+        repository: "Licoy/xiaobai-switch",
+        serverUrl: "https://github.com",
+        tag: "v0.0.1",
+        assets: assets.filter(({ name }) => !name.includes("XiaoBaiSwitch_x64.app.tar.gz")),
+        signatures,
+      }),
+    ).toThrow("missing updater platforms: darwin-x86_64, darwin-x86_64-app");
+  });
+});

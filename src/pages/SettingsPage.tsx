@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, Divider, Input, InputNumber, Select, Switch, theme, App } from "antd";
-import { CircleDot, ExternalLink, Github, Tag } from "lucide-react";
+import { CircleDot, ExternalLink, Github, RefreshCw, Tag } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore, useUIStore } from "@/stores";
 import type { SettingsSection } from "@/stores/uiStore";
@@ -15,6 +15,7 @@ import { openExternalUrl } from "@/lib/openUrl";
 import type { AppPaths, AppSettings, ProxyMode, ProxyProtocol } from "@/types/domain";
 import { SettingsSidebar } from "@/components/settings/SettingsSidebar";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
+import { useUpdateChecker } from "@/hooks/useUpdateChecker";
 import appIconUrl from "../../assets/brand/app-icon-1024.png?url";
 
 const rowStyle: React.CSSProperties = { padding: "4px 0" };
@@ -440,8 +441,12 @@ function AboutLinkRow({
 function AboutSection() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
+  const { checkForUpdate } = useUpdateChecker();
+  const settings = useSettingsStore((s) => s.settings);
+  const saveSettings = useSettingsStore((s) => s.saveSettings);
   const [paths, setPaths] = useState<AppPaths | null>(null);
   const [version, setVersion] = useState(PACKAGE_VERSION);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     void invoke<AppPaths>("get_app_paths")
@@ -451,6 +456,19 @@ function AboutSection() {
       .then(setVersion)
       .catch(() => null);
   }, []);
+
+  const handleCheckUpdate = async () => {
+    setChecking(true);
+    try {
+      await checkForUpdate();
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const patch = async (partial: Partial<AppSettings>) => {
+    await saveSettings(partial);
+  };
 
   return (
     <div className="p-6 pb-12">
@@ -466,6 +484,45 @@ function AboutSection() {
           <div className="mt-2 text-xs" style={{ color: token.colorTextTertiary }}>
             {t("settings.version")} <span>{version}</span>
           </div>
+        </div>
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.groupUpdate")}>
+        <div style={rowStyle} className="flex items-center justify-between gap-4">
+          <span>{t("settings.checkUpdate")}</span>
+          <Button
+            icon={<RefreshCw size={16} className={checking ? "animate-spin" : undefined} />}
+            loading={checking}
+            onClick={() => void handleCheckUpdate()}
+          >
+            {t("settings.checkUpdate")}
+          </Button>
+        </div>
+        <Divider style={{ margin: "8px 0" }} />
+        <div style={rowStyle} className="flex items-center justify-between gap-4">
+          <span>{t("settings.autoCheckUpdate")}</span>
+          <Switch
+            checked={settings.autoCheckUpdate}
+            onChange={(autoCheckUpdate) => void patch({ autoCheckUpdate })}
+          />
+        </div>
+        <Divider style={{ margin: "8px 0" }} />
+        <div style={rowStyle} className="flex items-center justify-between gap-4">
+          <span>{t("settings.updateCheckInterval")}</span>
+          <InputNumber
+            min={1}
+            max={1440}
+            precision={0}
+            style={{ width: 140 }}
+            value={settings.updateCheckInterval}
+            disabled={!settings.autoCheckUpdate}
+            addonAfter={t("settings.minutes")}
+            onChange={(v) => {
+              if (v == null || !Number.isFinite(v)) return;
+              void patch({
+                updateCheckInterval: Math.min(1440, Math.max(1, Math.round(v))),
+              });
+            }}
+          />
         </div>
       </SettingsGroup>
       <SettingsGroup title={t("settings.linksTitle")}>

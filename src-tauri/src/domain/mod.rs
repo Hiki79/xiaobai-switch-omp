@@ -362,7 +362,10 @@ pub struct AppSettings {
     pub codex_home_override: Option<String>,
     pub codex_env_inject_mode: String,
     pub force_exclusive_claude_auth_key: bool,
+    #[serde(default = "default_true")]
     pub auto_check_update: bool,
+    #[serde(default = "default_update_check_interval")]
+    pub update_check_interval: u32,
     /// Max backup copies kept per target under ~/.xiaobai-switch/backups/{target}.
     #[serde(default = "default_max_backup_copies")]
     pub max_backup_copies: u32,
@@ -408,6 +411,14 @@ pub fn clamp_route_probe_ttl(n: u32) -> u32 {
     n.clamp(1, 1440)
 }
 
+pub fn default_update_check_interval() -> u32 {
+    60
+}
+
+pub fn clamp_update_check_interval(n: u32) -> u32 {
+    n.clamp(1, 1440)
+}
+
 pub fn default_true() -> bool {
     true
 }
@@ -439,6 +450,7 @@ impl Default for AppSettings {
             codex_env_inject_mode: "auto".into(),
             force_exclusive_claude_auth_key: false,
             auto_check_update: true,
+            update_check_interval: default_update_check_interval(),
             max_backup_copies: default_max_backup_copies(),
             proxy_mode: default_proxy_mode(),
             proxy_protocol: default_proxy_protocol(),

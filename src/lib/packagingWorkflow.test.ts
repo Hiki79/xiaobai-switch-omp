@@ -98,6 +98,25 @@ describe("shipped GitHub workflows", () => {
     }
   });
 
+  it("enables signed updater artifacts in tauri.conf", () => {
+    const tauri = JSON.parse(readRepoFile("src-tauri/tauri.conf.json")) as {
+      bundle: { createUpdaterArtifacts?: boolean };
+      plugins: { updater?: { pubkey?: string; endpoints?: string[] } };
+    };
+    expect(tauri.bundle.createUpdaterArtifacts).toBe(true);
+    expect(tauri.plugins.updater?.endpoints).toEqual([
+      "https://github.com/Licoy/xiaobai-switch/releases/latest/download/latest.json",
+    ]);
+    expect(tauri.plugins.updater?.pubkey).toMatch(/^dW50cnVzdGVk/);
+  });
+
+  it("signs updater artifacts and publishes a combined latest.json", () => {
+    const release = readRepoFile(".github/workflows/release.yml");
+    expect(release).toMatch(/TAURI_SIGNING_PRIVATE_KEY/);
+    expect(release).toMatch(/includeUpdaterJson:\s*false/);
+    expect(release).toMatch(/scripts\/generate-updater-manifest\.mjs/);
+  });
+
   it("does not use the PowerShell Join-Path trailing-comma pitfall in the portable zip step", () => {
     const release = readRepoFile(".github/workflows/release.yml");
     // `Join-Path $dir "a.exe", Join-Path $dir "b.exe"` is one call, not two paths.

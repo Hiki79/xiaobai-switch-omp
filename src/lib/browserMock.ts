@@ -32,6 +32,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   codexEnvInjectMode: "auto",
   forceExclusiveClaudeAuthKey: false,
   autoCheckUpdate: true,
+  updateCheckInterval: 60,
   maxBackupCopies: 30,
   proxyMode: "system",
   proxyProtocol: "http",

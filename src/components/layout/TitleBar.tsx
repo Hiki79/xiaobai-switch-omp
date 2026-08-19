@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dropdown, theme, Tooltip } from "antd";
 import type { MenuProps } from "antd";
-import { Github, Globe, Minus, Moon, Monitor, Pin, PinOff, Settings, Square, Sun, X, XCircle } from "lucide-react";
+import { ArrowDownCircle, Github, Globe, Minus, Moon, Monitor, Pin, PinOff, Settings, Square, Sun, X, XCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore, useUIStore } from "@/stores";
 import { invoke, isTauri } from "@/lib/invoke";
 import { LANG_OPTIONS, APP_NAME, GITHUB_REPO_URL } from "@/lib/constants";
 import { openExternalUrl } from "@/lib/openUrl";
+import { useUpdateChecker } from "@/hooks/useUpdateChecker";
 
 const IS_WINDOWS = navigator.userAgent.includes("Windows");
 
@@ -44,8 +45,10 @@ export function TitleBar() {
   const saveSettings = useSettingsStore((s) => s.saveSettings);
   const [pinned, setPinned] = useState(alwaysOnTop);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInSettings = activePage === "settings";
+  const { checkForUpdate } = useUpdateChecker();
 
   useEffect(() => {
     setPinned(alwaysOnTop);
@@ -66,6 +69,15 @@ export function TitleBar() {
       unlisten?.();
     };
   }, []);
+
+  const handleCheckUpdate = useCallback(async () => {
+    setCheckingUpdate(true);
+    try {
+      await checkForUpdate();
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }, [checkForUpdate]);
 
   const handlePin = useCallback(async () => {
     const next = !pinned;
@@ -230,6 +242,24 @@ export function TitleBar() {
               <Globe size={14} />
             </button>
           </Dropdown>
+
+          {isTauri() && (
+            <Tooltip title={t("settings.checkUpdate")}>
+              <button
+                type="button"
+                aria-label={t("settings.checkUpdate")}
+                disabled={checkingUpdate}
+                onClick={() => void handleCheckUpdate()}
+                style={{
+                  ...buttonBase,
+                  opacity: checkingUpdate ? 0.5 : 1,
+                }}
+                {...hoverHandlers(token.colorTextSecondary)}
+              >
+                <ArrowDownCircle size={14} />
+              </button>
+            </Tooltip>
+          )}
 
           <Tooltip title={t("desktop.github")}>
             <button

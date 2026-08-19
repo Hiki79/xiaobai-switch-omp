@@ -22,6 +22,7 @@ pub struct TrayLabels {
     pub open_apply: &'static str,
     pub open_settings: &'static str,
     pub open_data_dir: &'static str,
+    pub check_update: &'static str,
     pub claude: &'static str,
     pub codex: &'static str,
     pub applied: &'static str,
@@ -41,6 +42,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             open_apply: "Open Apply Center",
             open_settings: "Open Settings",
             open_data_dir: "Open Data Folder",
+            check_update: "Check for Updates",
             claude: "Claude Code",
             codex: "Codex",
             applied: "Applied",
@@ -57,6 +59,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             open_apply: "打开应用中心",
             open_settings: "打开设置",
             open_data_dir: "打开数据目录",
+            check_update: "检查更新",
             claude: "Claude Code",
             codex: "Codex",
             applied: "已应用",
@@ -291,6 +294,14 @@ fn build_menu(
     append_plain_item(app, &menu, "open_apply", labels.open_apply, true)?;
     append_plain_item(app, &menu, "open_settings", labels.open_settings, true)?;
     append_plain_item(app, &menu, "open_data_dir", labels.open_data_dir, true)?;
+    append_native_icon_item(
+        app,
+        &menu,
+        "check_update",
+        labels.check_update,
+        true,
+        NativeIcon::Refresh,
+    )?;
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     append_native_icon_item(
@@ -462,6 +473,10 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
             }
             Err(err) => tracing::warn!("Failed to resolve data dir from tray: {err}"),
         },
+        "check_update" => {
+            crate::window_lifecycle::restore_main_window(app);
+            let _ = app.emit("tray-check-update", ());
+        }
         "quit" => crate::window_lifecycle::request_quit(app),
         "header"
         | "apply_header"
@@ -533,6 +548,7 @@ mod tests {
     fn zh_cn_and_unknown_use_chinese() {
         let zh = tray_labels("zh-CN");
         assert_eq!(zh.open_apply, "打开应用中心");
+        assert_eq!(zh.check_update, "检查更新");
         assert_eq!(zh.applied, "已应用");
         assert_eq!(tray_labels("zh").quit, "退出 XiaoBaiSwitch");
         assert_eq!(tray_labels("fr-FR").open_settings, "打开设置");
@@ -543,6 +559,7 @@ mod tests {
         let en = tray_labels("en-US");
         assert!(en.quit.contains("Quit"));
         assert_eq!(en.not_applied, "Not applied");
+        assert_eq!(en.check_update, "Check for Updates");
         assert_eq!(tray_labels("en").open_apply, "Open Apply Center");
     }
 

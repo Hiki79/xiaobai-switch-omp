@@ -111,6 +111,15 @@ URL 中携带 API Key 可能被浏览器历史、扩展或系统日志记录。�
 | Windows x64 | `windows-latest` | `x86_64-pc-windows-msvc` |
 | Windows ARM64 | `windows-latest`（交叉编译） | `aarch64-pc-windows-msvc` 
 
+## 自动更新
+
+正式发布的桌面端会从 GitHub Releases 的 `latest.json` 检查更新，并支持在应用内下载安装。可在 **设置 → 关于** 手动检查，或开启自动检查。
+
+发布流水线需要仓库 Secrets：
+
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+
 ## License
 
 MIT
