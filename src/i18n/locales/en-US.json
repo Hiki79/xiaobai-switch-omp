@@ -121,6 +121,7 @@
     "deepLinkNeedKey": "This link has no API key — finish it in the form",
     "deepLinkNoKey": "Not provided",
     "deepLinkSecurityHint": "Only import trusted links to avoid leaving keys in browser history",
+    "advanced": "Advanced configuration",
     "codexPrivateCapabilities": "Codex-specific capabilities",
     "deepLinkCapabilitiesOff": "All off"
   },

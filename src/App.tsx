@@ -155,7 +155,20 @@ export default function App() {
       }}
       modal={{
         centered: true,
-        styles: { mask: { backdropFilter: "blur(4px)" } },
+        styles: {
+          mask: { backdropFilter: "blur(4px)" },
+          container: {
+            maxHeight: "calc(100vh - 32px)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          },
+          body: {
+            overflowY: "auto",
+            overflowX: "hidden",
+            minHeight: 0,
+          },
+        },
       }}
     >
       <AntdApp className="h-full">

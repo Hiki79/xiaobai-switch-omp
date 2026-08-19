@@ -18,6 +18,14 @@ import {
 } from "@/lib/siteCapabilities";
 import { CodexCapabilitySwitchList } from "@/components/apply/CodexCapabilitySwitchList";
 
+function toActiveKeys(keys: string | string[]): string[] {
+  return Array.isArray(keys) ? keys.map(String) : [String(keys)];
+}
+
+function shouldOpenAdvanced(protocol?: SiteProtocol | null, notes?: string | null) {
+  return protocol === "anthropic" || Boolean(notes?.trim());
+}
+
 export interface SiteFormInitialValues {
   name?: string;
   baseUrls?: string[];
@@ -43,6 +51,7 @@ export function SiteFormModal({ open, site, initialValues, onClose, onSaved }: P
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [codexFlags, setCodexFlags] = useState<CodexCapabilityFlags>(EMPTY_CODEX_FLAGS);
+  const [advancedOpen, setAdvancedOpen] = useState<string[]>([]);
   const [capOpen, setCapOpen] = useState<string[]>([]);
   const watchedUrls = Form.useWatch("baseUrls", form) as string[] | undefined;
   const previewUrl = watchedUrls?.find((u) => String(u ?? "").trim()) ?? "";
@@ -51,7 +60,10 @@ export function SiteFormModal({ open, site, initialValues, onClose, onSaved }: P
     if (!open) return;
     const caps = site?.capabilities ?? initialValues?.capabilities ?? {};
     const flags = codexFlagsFromCapabilities(caps);
+    const protocol = site?.protocol ?? initialValues?.protocol ?? "openai_compatible";
+    const notes = site ? (site.notes ?? "") : (initialValues?.notes ?? "");
     setCodexFlags(flags);
+    setAdvancedOpen(shouldOpenAdvanced(protocol, notes) ? ["advanced"] : []);
     setCapOpen(anyCodexCapabilityOn(caps) ? ["codex"] : []);
     if (site) {
       form.setFieldsValue({
@@ -133,6 +145,19 @@ export function SiteFormModal({ open, site, initialValues, onClose, onSaved }: P
       destroyOnHidden
       centered
       mask={{ enabled: true, blur: true }}
+      styles={{
+        container: {
+          maxHeight: "calc(100vh - 32px)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        },
+        body: {
+          overflowY: "auto",
+          overflowX: "hidden",
+          minHeight: 0,
+        },
+      }}
     >
       <Form form={form} layout="vertical" className="mt-2" requiredMark="optional">
         <Form.Item name="name" label={t("sites.name")} rules={[{ required: true, message: t("sites.name") }]}>
@@ -158,31 +183,48 @@ export function SiteFormModal({ open, site, initialValues, onClose, onSaved }: P
         >
           <Input.Password placeholder="sk-..." allowClear />
         </Form.Item>
-        <Form.Item name="protocol" label={t("sites.protocol")}>
-          <Select
-            options={[
-              { value: "openai_compatible", label: t("sites.protocolOpenai") },
-              { value: "anthropic", label: t("sites.protocolAnthropic") },
+        <div className="flex flex-col gap-2">
+          <Collapse
+            size="small"
+            activeKey={advancedOpen}
+            onChange={(keys) => setAdvancedOpen(toActiveKeys(keys))}
+            items={[
+              {
+                key: "advanced",
+                label: t("sites.advanced"),
+                children: (
+                  <>
+                    <Form.Item name="protocol" label={t("sites.protocol")}>
+                      <Select
+                        options={[
+                          { value: "openai_compatible", label: t("sites.protocolOpenai") },
+                          { value: "anthropic", label: t("sites.protocolAnthropic") },
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item name="notes" label={t("sites.notes")} className="!mb-0">
+                      <Input.TextArea rows={2} allowClear />
+                    </Form.Item>
+                  </>
+                ),
+              },
             ]}
           />
-        </Form.Item>
-        <Form.Item name="notes" label={t("sites.notes")}>
-          <Input.TextArea rows={2} allowClear />
-        </Form.Item>
-        <Collapse
-          size="small"
-          activeKey={capOpen}
-          onChange={(keys) => setCapOpen(Array.isArray(keys) ? keys.map(String) : [String(keys)])}
-          items={[
-            {
-              key: "codex",
-              label: t("sites.codexPrivateCapabilities"),
-              children: (
-                <CodexCapabilitySwitchList value={codexFlags} onChange={setCodexFlags} />
-              ),
-            },
-          ]}
-        />
+          <Collapse
+            size="small"
+            activeKey={capOpen}
+            onChange={(keys) => setCapOpen(toActiveKeys(keys))}
+            items={[
+              {
+                key: "codex",
+                label: t("sites.codexPrivateCapabilities"),
+                children: (
+                  <CodexCapabilitySwitchList value={codexFlags} onChange={setCodexFlags} />
+                ),
+              },
+            ]}
+          />
+        </div>
       </Form>
     </Modal>
   );

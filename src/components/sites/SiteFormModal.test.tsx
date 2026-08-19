@@ -68,15 +68,47 @@ describe("SiteFormModal base url list", () => {
     expect(inputs[1]).toHaveValue("https://b.example.com");
   });
 
-  it("keeps Codex-specific capabilities collapsed by default", () => {
+  it("keeps advanced config and Codex capabilities collapsed by default", () => {
     render(
       <Wrapper>
         <SiteFormModal open site={null} onClose={() => undefined} />
       </Wrapper>,
     );
 
+    expect(screen.getByText("高级配置")).toBeInTheDocument();
     expect(screen.getByText("Codex私有能力")).toBeInTheDocument();
     expect(document.querySelector(".ant-collapse-item-active")).toBeNull();
+    expect(screen.queryByText("连接协议")).not.toBeInTheDocument();
+    expect(screen.queryByText("备注")).not.toBeInTheDocument();
+    expect(screen.queryByText("识图支持")).not.toBeInTheDocument();
+  });
+
+  it("reveals protocol and notes after expanding advanced config", () => {
+    render(
+      <Wrapper>
+        <SiteFormModal open site={null} onClose={() => undefined} />
+      </Wrapper>,
+    );
+
+    fireEvent.click(screen.getByText("高级配置"));
+    expect(screen.getByText("连接协议")).toBeInTheDocument();
+    expect(screen.getByText("备注")).toBeInTheDocument();
+    expect(screen.queryByText("识图支持")).not.toBeInTheDocument();
+  });
+
+  it("expands advanced config when notes or a non-default protocol are set", () => {
+    render(
+      <Wrapper>
+        <SiteFormModal
+          open
+          site={{ ...sampleSite(), protocol: "anthropic", notes: "keep this" }}
+          onClose={() => undefined}
+        />
+      </Wrapper>,
+    );
+
+    expect(screen.getByText("连接协议")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("keep this")).toBeInTheDocument();
     expect(screen.queryByText("识图支持")).not.toBeInTheDocument();
   });
 
@@ -93,6 +125,24 @@ describe("SiteFormModal base url list", () => {
 
     expect(document.querySelector(".ant-collapse-item-active")).not.toBeNull();
     expect(screen.getByText("识图支持")).toBeInTheDocument();
+    expect(screen.queryByText("连接协议")).not.toBeInTheDocument();
+  });
+
+  it("keeps the dialog inside the viewport when content grows", () => {
+    render(
+      <Wrapper>
+        <SiteFormModal
+          open
+          site={{ ...sampleSite(), capabilities: { "codex-vision": true } }}
+          onClose={() => undefined}
+        />
+      </Wrapper>,
+    );
+
+    const container = document.querySelector(".ant-modal-container");
+    expect(container).toHaveStyle({ maxHeight: "calc(100vh - 32px)" });
+    const body = document.querySelector(".ant-modal-body");
+    expect(body).toHaveStyle({ overflowY: "auto" });
   });
 
   it("prefills create form from a deep-link payload", () => {

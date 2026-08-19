@@ -57,7 +57,7 @@
 - 每个目标有各自的专用表单（不是共享的双目标复选框面板）
 - Claude 关键字段：鉴权 key 风格、默认模型、opus/sonnet/haiku 别名映射、effort 等级
 - Codex 关键字段：默认模型、写入全部模型目录开关、reasoning effort；平台能力默认跟随站点 `codex-compact` / `codex-vision` / `codex-imagegen` / `codex-search`，也可在应用中心自定义覆盖
-- 站点编辑含默认收起的「Codex私有能力」；`xiaobaiswitch://sites` 用同一套 kebab 键导入预设
+- 站点编辑含默认收起的「高级配置」（连接协议、备注）与「Codex私有能力」；`xiaobaiswitch://sites` 用同一套 kebab 键导入预设
 - 分区卡片复用 `SettingsGroup`，保持视觉语言一致
 
 ## Ant Design 约定
@@ -70,7 +70,16 @@
 <ConfigProvider
   modal={{
     centered: true,
-    styles: { mask: { backdropFilter: "blur(4px)" } },
+    styles: {
+      mask: { backdropFilter: "blur(4px)" },
+      container: {
+        maxHeight: "calc(100vh - 32px)",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      },
+      body: { overflowY: "auto", overflowX: "hidden", minHeight: 0 },
+    },
   }}
 >
   <AntdApp className="h-full">…</AntdApp>
@@ -93,6 +102,7 @@
 | `destroyOnHidden` | `true`（antd 5.23+ / 6.x；优先于已弃用的 `destroyOnClose`） |
 | `mask` | `{ enabled: true, blur: true }`（在支持时） |
 | `width` | 表单优先 `520`–`560` |
+| 高度 | 容器 `maxHeight: calc(100vh - 32px)`；标题 / 底栏固定，body 内部滚动 |
 
 ```tsx
 <Modal

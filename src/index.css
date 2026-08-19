@@ -163,6 +163,27 @@ svg.lucide {
   border-inline-end: none !important;
 }
 
+/* Keep dialogs inside the desktop window; title + footer stay pinned. */
+.ant-modal-container {
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ant-modal-header,
+.ant-modal-footer {
+  flex-shrink: 0;
+}
+
+.ant-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* Scrollbars — thin overlay, light/dark via theme tokens */
 :root {
   --scrollbar-size: 6px;

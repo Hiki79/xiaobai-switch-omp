@@ -121,6 +121,7 @@
     "deepLinkNeedKey": "链接未包含 API Key，请补全后保存",
     "deepLinkNoKey": "未提供",
     "deepLinkSecurityHint": "请确认来源可信后再导入以免密钥残留在浏览器历史中",
+    "advanced": "高级配置",
     "codexPrivateCapabilities": "Codex私有能力",
     "deepLinkCapabilitiesOff": "全部关闭"
   },
