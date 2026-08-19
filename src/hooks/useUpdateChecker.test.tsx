@@ -1,6 +1,12 @@
 import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resetUpdateCheckerForTests, useUpdateChecker } from "./useUpdateChecker";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useSettingsStore } from "@/stores";
+import {
+  resetUpdateCheckerForTests,
+  STARTUP_UPDATE_CHECK_DELAY_MS,
+  useAutoCheckUpdate,
+  useUpdateChecker,
+} from "./useUpdateChecker";
 
 const mocks = vi.hoisted(() => ({
   confirm: vi.fn(),
@@ -217,5 +223,98 @@ describe("useUpdateChecker", () => {
     expect(mocks.messageError).not.toHaveBeenCalled();
     expect(mocks.messageLoading).not.toHaveBeenCalled();
     error.mockRestore();
+  });
+});
+
+describe("useAutoCheckUpdate", () => {
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    resetUpdateCheckerForTests();
+    mocks.isTauri.mockReturnValue(true);
+    mocks.invoke.mockResolvedValue(null);
+    useSettingsStore.setState({
+      loaded: false,
+      loading: false,
+      settings: {
+        ...useSettingsStore.getState().settings,
+        autoCheckUpdate: true,
+        updateCheckInterval: 60,
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function advance(ms: number) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  it("silently checks once settings load when auto-check is enabled", async () => {
+    const { rerender } = renderHook(() => useAutoCheckUpdate());
+
+    await advance(STARTUP_UPDATE_CHECK_DELAY_MS);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+
+    act(() => {
+      useSettingsStore.setState({ loaded: true });
+    });
+
+    await advance(STARTUP_UPDATE_CHECK_DELAY_MS - 1);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+
+    rerender();
+    await advance(1);
+    expect(mocks.invoke).toHaveBeenCalledWith("check_app_update");
+    expect(mocks.messageLoading).not.toHaveBeenCalled();
+    expect(mocks.messageSuccess).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-check when the user turned the setting off", async () => {
+    useSettingsStore.setState({
+      loaded: true,
+      settings: {
+        ...useSettingsStore.getState().settings,
+        autoCheckUpdate: false,
+      },
+    });
+
+    renderHook(() => useAutoCheckUpdate());
+    await advance(STARTUP_UPDATE_CHECK_DELAY_MS + 1_000);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-check outside the desktop app", async () => {
+    mocks.isTauri.mockReturnValue(false);
+    useSettingsStore.setState({ loaded: true });
+
+    renderHook(() => useAutoCheckUpdate());
+    await advance(STARTUP_UPDATE_CHECK_DELAY_MS);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("keeps the interval check even if the hook re-renders", async () => {
+    useSettingsStore.setState({
+      loaded: true,
+      settings: {
+        ...useSettingsStore.getState().settings,
+        updateCheckInterval: 1,
+      },
+    });
+
+    const { rerender } = renderHook(() => useAutoCheckUpdate());
+    await advance(STARTUP_UPDATE_CHECK_DELAY_MS);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+
+    await advance(60_000 - STARTUP_UPDATE_CHECK_DELAY_MS - 1);
+    rerender();
+    await advance(1);
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "check_app_update");
   });
 });

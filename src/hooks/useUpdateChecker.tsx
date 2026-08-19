@@ -218,30 +218,30 @@ export function useUpdateChecker() {
   return { checkForUpdate };
 }
 
+export const STARTUP_UPDATE_CHECK_DELAY_MS = 3_000;
+
 export function useAutoCheckUpdate() {
   const { checkForUpdate } = useUpdateChecker();
   const loaded = useSettingsStore((s) => s.loaded);
   const autoCheckUpdate = useSettingsStore((s) => s.settings.autoCheckUpdate);
   const updateCheckInterval = useSettingsStore((s) => s.settings.updateCheckInterval);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const checkRef = useRef(checkForUpdate);
+  checkRef.current = checkForUpdate;
 
   useEffect(() => {
     if (!isTauri() || !loaded || !autoCheckUpdate) return;
-    const timer = setTimeout(() => {
-      void checkForUpdate({ silent: true });
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [autoCheckUpdate, checkForUpdate, loaded]);
+    const timer = window.setTimeout(() => {
+      void checkRef.current({ silent: true });
+    }, STARTUP_UPDATE_CHECK_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [autoCheckUpdate, loaded]);
 
   useEffect(() => {
-    if (!isTauri() || !loaded || !autoCheckUpdate || !updateCheckInterval) return;
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    const intervalMs = Math.max(updateCheckInterval, 1) * 60 * 1000;
-    intervalRef.current = setInterval(() => {
-      void checkForUpdate({ silent: true });
+    if (!isTauri() || !loaded || !autoCheckUpdate) return;
+    const intervalMs = Math.max(updateCheckInterval || 60, 1) * 60 * 1000;
+    const id = window.setInterval(() => {
+      void checkRef.current({ silent: true });
     }, intervalMs);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [autoCheckUpdate, checkForUpdate, loaded, updateCheckInterval]);
+    return () => window.clearInterval(id);
+  }, [autoCheckUpdate, loaded, updateCheckInterval]);
 }
