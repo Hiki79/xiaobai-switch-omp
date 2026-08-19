@@ -113,6 +113,9 @@ xattr -cr /Applications/XiaoBaiSwitch.app
 
 API Key 在应用内加密存储；应用到 Claude Code / Codex 后会以明文写入对应工具的配置，请勿把这些配置同步到不可信云盘。
 
+## 社区支持
+- [LinuxDO](https://linux.do)
+
 ## License
 
 MIT
