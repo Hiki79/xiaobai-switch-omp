@@ -22,6 +22,14 @@
 - **链接导入**：通过 `xiaobaiswitch://` 链接一键导入站点，不会自动应用到工具
 - **桌面体验**：托盘常驻、开机启动、浅色 / 深色主题、简体中文与 English
 
+## 软件截图
+
+| 欢迎页 | 测试模型 |
+|:---:|:---:|
+| <img src="assets/screenshot/1.webp" alt="欢迎页"> | <img src="assets/screenshot/2.webp" alt="测试模型"> |
+| 站点中心 | 应用中心 |
+| <img src="assets/screenshot/3.webp" alt="站点中心"> | <img src="assets/screenshot/4.webp" alt="应用中心"> |
+
 ## 快速开始
 
 1. 添加一个上游站点，填写名称、Base URL 和 API Key

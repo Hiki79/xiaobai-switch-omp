@@ -22,6 +22,14 @@ Everything starts from an upstream site: enter a Base URL and API key, fetch or 
 - **Link import**: import a site with a `xiaobaiswitch://` link; it is not applied to tools automatically
 - **Desktop extras**: tray, launch at login, light / dark theme, Simplified Chinese and English
 
+## Screenshots
+
+| Welcome | Model test |
+|:---:|:---:|
+| <img src="assets/screenshot/1.webp" alt="Welcome"> | <img src="assets/screenshot/2.webp" alt="Model test"> |
+| Sites | Apply Center |
+| <img src="assets/screenshot/3.webp" alt="Sites"> | <img src="assets/screenshot/4.webp" alt="Apply Center"> |
+
 ## Quick start
 
 1. Add an upstream site with a name, Base URL, and API key
