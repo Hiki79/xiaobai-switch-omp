@@ -130,13 +130,25 @@ jobs:
             - **Windows (ARM64)**: `.exe` (NSIS)
 
             ### Notes
-            - macOS builds are **unsigned**. First open may require: right-click → Open, or System Settings → Privacy & Security.
+            - macOS builds are **ad-hoc signed** (no Apple Developer ID / notarization).
+            - A browser download can make Gatekeeper say the app is **damaged**. That is the quarantine flag, not a broken file. **Privacy & Security will not show Open Anyway** for this dialog.
+            - Copy the app to Applications, then run:
+              `xattr -cr /Applications/XiaoBaiSwitch.app`
+              After that, right-click the app → Open.
             - Windows may prompt for WebView2 if the system component is missing (bootstrapper is embedded).
 
             Built from tag `${{ github.ref_name }}`.
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
+
+      - name: Verify macOS app bundle signature
+        if: startsWith(matrix.platform, 'macos-')
+        run: |
+          set -euo pipefail
+          APP="src-tauri/target/${{ matrix.target }}/release/bundle/macos/XiaoBaiSwitch.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv --verbose=2 "$APP" 2>&1 | grep -q "Sealed Resources version="
 
       - name: Package Windows portable (zip)
         if: startsWith(matrix.platform, 'windows-')

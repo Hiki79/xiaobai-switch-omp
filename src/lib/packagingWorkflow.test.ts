@@ -100,7 +100,10 @@ describe("shipped GitHub workflows", () => {
 
   it("enables signed updater artifacts in tauri.conf", () => {
     const tauri = JSON.parse(readRepoFile("src-tauri/tauri.conf.json")) as {
-      bundle: { createUpdaterArtifacts?: boolean };
+      bundle: {
+        createUpdaterArtifacts?: boolean;
+        macOS?: { signingIdentity?: string | null };
+      };
       plugins: { updater?: { pubkey?: string; endpoints?: string[] } };
     };
     expect(tauri.bundle.createUpdaterArtifacts).toBe(true);
@@ -108,6 +111,10 @@ describe("shipped GitHub workflows", () => {
       "https://github.com/Licoy/xiaobai-switch/releases/latest/download/latest.json",
     ]);
     expect(tauri.plugins.updater?.pubkey).toMatch(/^dW50cnVzdGVk/);
+    // "-" makes Tauri codesign the .app bundle. Without it, only the linker
+    // ad-hoc-signs the Mach-O (Sealed Resources=none) and Gatekeeper says
+    // the downloaded app is damaged — Privacy & Security never shows Open Anyway.
+    expect(tauri.bundle.macOS?.signingIdentity).toBe("-");
   });
 
   it("signs updater artifacts and publishes a combined latest.json", () => {
@@ -116,6 +123,8 @@ describe("shipped GitHub workflows", () => {
     expect(release).toMatch(/includeUpdaterJson:\s*false/);
     expect(release).toMatch(/scripts\/generate-updater-manifest\.mjs/);
     expect(release).toMatch(/scripts\/validate-updater-signing-secret\.mjs/);
+    expect(release).toMatch(/xattr -cr \/Applications\/XiaoBaiSwitch\.app/);
+    expect(release).toMatch(/codesign --verify --deep --strict/);
   });
 
   it("does not use the PowerShell Join-Path trailing-comma pitfall in the portable zip step", () => {

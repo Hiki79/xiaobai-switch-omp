@@ -43,7 +43,9 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",
-      "bundleName": "XiaoBaiSwitch"
+      "bundleName": "XiaoBaiSwitch",
+      "signingIdentity": "-",
+      "hardenedRuntime": false
     },
     "windows": {
       "webviewInstallMode": {

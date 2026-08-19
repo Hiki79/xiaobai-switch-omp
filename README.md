@@ -111,6 +111,14 @@ URL 中携带 API Key 可能被浏览器历史、扩展或系统日志记录。�
 | Windows x64 | `windows-latest` | `x86_64-pc-windows-msvc` |
 | Windows ARM64 | `windows-latest`（交叉编译） | `aarch64-pc-windows-msvc` 
 
+macOS 安装包是 ad-hoc 签名（未使用 Apple Developer ID，也未公证）。浏览器下载后，系统可能提示「已损坏」——这是隔离属性，不是文件坏了；**「隐私与安全性」不会出现「仍要打开」**。把应用拖到「应用程序」后执行：
+
+```bash
+xattr -cr /Applications/XiaoBaiSwitch.app
+```
+
+然后右键点应用 → 打开。
+
 ## 自动更新
 
 正式发布的桌面端会从 GitHub Releases 的 `latest.json` 检查更新，并支持在应用内下载安装。可在 **设置 → 关于** 手动检查，或开启自动检查。
