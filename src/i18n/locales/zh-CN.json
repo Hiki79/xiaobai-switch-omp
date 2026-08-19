@@ -334,7 +334,7 @@
     "back": "上一步",
     "finish": "完成",
     "welcome": "欢迎使用 XiaoBaiSwitch",
-    "welcomeDesc": "三步完成中转站配置，接入 Claude Code 或 Codex。"
+    "welcomeDesc": "三步完成AI上游站点配置，接入 Claude Code 或 Codex。"
   },
   "desktop": {
     "github": "GitHub",

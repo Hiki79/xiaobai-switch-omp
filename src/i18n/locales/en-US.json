@@ -334,7 +334,7 @@
     "back": "Back",
     "finish": "Finish",
     "welcome": "Welcome to XiaoBaiSwitch",
-    "welcomeDesc": "Three steps to configure a relay site for Claude Code or Codex."
+    "welcomeDesc": "Three steps to configure an AI upstream site for Claude Code or Codex."
   },
   "desktop": {
     "github": "GitHub",

@@ -1,6 +1,7 @@
 import { Button, Steps, theme } from "antd";
 import { useTranslation } from "react-i18next";
 import { useUIStore } from "@/stores";
+import appIconUrl from "../../../assets/brand/app-icon-1024.png?url";
 
 interface Props {
   onAdd: () => void;
@@ -13,8 +14,9 @@ export function EmptyOnboarding({ onAdd }: Props) {
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
-      <div>
-        <h2 className="text-xl font-semibold" style={{ color: token.colorText }}>
+      <div className="flex flex-col items-center">
+        <img src={appIconUrl} alt={t("app.name")} width={88} height={88} draggable={false} />
+        <h2 className="mt-3 text-xl font-semibold" style={{ color: token.colorText }}>
           {t("onboarding.welcome")}
         </h2>
         <p className="mt-2 max-w-md text-sm" style={{ color: token.colorTextSecondary }}>
