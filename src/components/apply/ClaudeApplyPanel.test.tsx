@@ -115,6 +115,7 @@ describe("ClaudeApplyPanel", () => {
     expect(footer).toBeInTheDocument();
     expect(footer.compareDocumentPosition(screen.getByText("状态")) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     expect(screen.getByRole("button", { name: "应用配置" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "还原官方配置" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /配置备份记录/ })).toBeInTheDocument();
     expect(screen.getByTestId("apply-footer").compareDocumentPosition(screen.getByRole("button", { name: /配置备份记录/ })) & Node.DOCUMENT_POSITION_CONTAINED_BY).toBeTruthy();
     expect(footer).not.toHaveTextContent("请重启终端");

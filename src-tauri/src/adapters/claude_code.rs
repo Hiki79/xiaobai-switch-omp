@@ -357,6 +357,65 @@ pub fn surgical_revert(
     Ok(())
 }
 
+/// Env keys that force Claude Code onto a gateway / relay instead of the
+/// official claude.ai subscription login.
+const OFFICIAL_RESTORE_ENV_KEYS: &[&str] = &[
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "CLAUDE_CODE_EFFORT_LEVEL",
+    "ANTHROPIC_CUSTOM_HEADERS",
+    "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
+];
+
+/// Strip relay routing and credential overrides so Claude Code falls back
+/// to official account login. Leaves MCP / permissions / official credentials
+/// (`~/.claude/.credentials.json`) untouched.
+pub fn restore_official(
+    claude_home_override: Option<&str>,
+    backup_root: &PathBuf,
+) -> AppResult<crate::adapters::RestoreOfficialOutcome> {
+    let path = settings_path(claude_home_override)?;
+    if !path.exists() {
+        return Ok(crate::adapters::RestoreOfficialOutcome {
+            backup_paths: vec![],
+            env_keys: vec![],
+        });
+    }
+
+    let bak = backup_file(&path, backup_root)?;
+    let mut root = read_settings(&path)?;
+    {
+        let obj = root
+            .as_object_mut()
+            .ok_or_else(|| AppError::new("invalid_config", "settings root must be object"))?;
+        if let Some(env) = obj.get_mut("env").and_then(|e| e.as_object_mut()) {
+            for key in OFFICIAL_RESTORE_ENV_KEYS {
+                env.remove(*key);
+            }
+            if env.is_empty() {
+                obj.remove("env");
+            }
+        }
+        obj.remove("model");
+        obj.remove("effortLevel");
+        obj.remove("apiKeyHelper");
+    }
+    let pretty = serde_json::to_string_pretty(&root)? + "\n";
+    if let Err(e) = atomic_write(&path, pretty.as_bytes(), false) {
+        let _ = restore_file(&bak, &path);
+        return Err(e);
+    }
+    Ok(crate::adapters::RestoreOfficialOutcome {
+        backup_paths: vec![bak.display().to_string()],
+        env_keys: vec![],
+    })
+}
+
 pub fn summary_from_settings(root: &Value) -> HashMap<String, Option<String>> {
     let mut out = HashMap::new();
     if let Some(env) = root.get("env").and_then(|e| e.as_object()) {
@@ -600,5 +659,89 @@ mod rewrite_tests {
                 .map(String::as_str),
             Some("https://new.example.com")
         );
+    }
+}
+
+#[cfg(test)]
+mod restore_official_tests {
+    use super::*;
+
+    #[test]
+    fn restore_official_strips_relay_keys_and_keeps_other_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("settings.json"),
+            r#"{
+  "theme": "dark",
+  "permissions": { "allow": ["Bash"] },
+  "model": "relay-opus",
+  "effortLevel": "high",
+  "apiKeyHelper": "~/bin/get-gateway-key.sh",
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://relay.example.com",
+    "ANTHROPIC_AUTH_TOKEN": "sk-relay",
+    "ANTHROPIC_API_KEY": "sk-also",
+    "ANTHROPIC_MODEL": "relay-opus",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "relay-opus",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "relay-sonnet",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "relay-haiku",
+    "CLAUDE_CODE_EFFORT_LEVEL": "high",
+    "ANTHROPIC_CUSTOM_HEADERS": "X-Org-Route: prod",
+    "FOO": "keep-me"
+  }
+}
+"#,
+        )
+        .unwrap();
+        let bak = dir.path().join("bak");
+        fs::create_dir_all(&bak).unwrap();
+        restore_official(Some(dir.path().to_str().unwrap()), &bak).unwrap();
+        let root: Value =
+            serde_json::from_str(&fs::read_to_string(dir.path().join("settings.json")).unwrap())
+                .unwrap();
+        assert_eq!(root["theme"], "dark");
+        assert_eq!(root["permissions"]["allow"][0], "Bash");
+        assert!(root.get("model").is_none());
+        assert!(root.get("effortLevel").is_none());
+        assert!(root.get("apiKeyHelper").is_none());
+        let env = root["env"].as_object().unwrap();
+        assert_eq!(env.get("FOO").and_then(|v| v.as_str()), Some("keep-me"));
+        for key in OFFICIAL_RESTORE_ENV_KEYS {
+            assert!(!env.contains_key(*key), "left behind {key}");
+        }
+        assert!(bak.join("settings.json").exists());
+    }
+
+    #[test]
+    fn restore_official_is_noop_when_settings_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let bak = dir.path().join("bak");
+        fs::create_dir_all(&bak).unwrap();
+        let out = restore_official(Some(dir.path().to_str().unwrap()), &bak).unwrap();
+        assert!(out.backup_paths.is_empty());
+        assert!(!dir.path().join("settings.json").exists());
+    }
+
+    #[test]
+    fn restore_official_drops_empty_env_object() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("settings.json"),
+            r#"{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://relay.example.com",
+    "ANTHROPIC_AUTH_TOKEN": "sk-relay"
+  }
+}
+"#,
+        )
+        .unwrap();
+        let bak = dir.path().join("bak");
+        fs::create_dir_all(&bak).unwrap();
+        restore_official(Some(dir.path().to_str().unwrap()), &bak).unwrap();
+        let root: Value =
+            serde_json::from_str(&fs::read_to_string(dir.path().join("settings.json")).unwrap())
+                .unwrap();
+        assert!(root.get("env").is_none());
     }
 }

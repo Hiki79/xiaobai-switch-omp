@@ -55,6 +55,24 @@ pub fn remove_env_key(lines: &mut Vec<String>, key: &str) {
     });
 }
 
+pub fn list_defined_keys(lines: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in lines {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let rest = trimmed.strip_prefix("export ").unwrap_or(trimmed);
+        if let Some((key, _)) = rest.split_once('=') {
+            let key = key.trim();
+            if !key.is_empty() && !out.iter().any(|k| k == key) {
+                out.push(key.to_string());
+            }
+        }
+    }
+    out
+}
+
 fn escape_shell(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -73,5 +91,7 @@ mod tests {
         remove_env_key(&mut lines, "XIAOBAI_SITE_AAA_API_KEY");
         assert!(!lines.iter().any(|l| l.contains("AAA")));
         assert!(lines.iter().any(|l| l.contains("BBB")));
+        let keys = list_defined_keys(&lines);
+        assert_eq!(keys, vec!["XIAOBAI_SITE_BBB_API_KEY".to_string()]);
     }
 }

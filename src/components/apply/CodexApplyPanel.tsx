@@ -34,6 +34,7 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
   const loadStatus = useApplyStore((s) => s.loadStatus);
   const apply = useApplyStore((s) => s.apply);
   const revert = useApplyStore((s) => s.revert);
+  const restoreOfficial = useApplyStore((s) => s.restoreOfficial);
   const cleanupOrphan = useApplyStore((s) => s.cleanupOrphan);
   const statusLoading = useApplyStore((s) => s.loading);
 
@@ -284,6 +285,7 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
         loading={applying}
         disabled={!modelId}
         onApply={() => void handleApply()}
+        onRestoreOfficial={() => restoreOfficial("codex")}
       />
     </div>
   );

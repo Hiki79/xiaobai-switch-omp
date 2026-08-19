@@ -5,7 +5,7 @@ use crate::domain::{
     TargetKind, TouchedKeys,
 };
 use crate::env_inject::codex_env_file::{
-    read_env_file, remove_env_key, upsert_env_key, write_env_file,
+    list_defined_keys, read_env_file, remove_env_key, upsert_env_key, write_env_file,
 };
 use crate::error::{AppError, AppResult};
 use crate::paths::{codex_env_path, resolve_codex_home, set_secret_permissions};
@@ -528,6 +528,197 @@ pub fn surgical_revert(
     Ok(())
 }
 
+fn is_managed_provider(id: &str, binding: Option<&TargetBinding>) -> bool {
+    id.starts_with("xiaobai_") || binding.and_then(|b| b.provider_id.as_deref()) == Some(id)
+}
+
+fn prune_empty_table(doc: &mut DocumentMut, key: &str) {
+    let empty = doc
+        .get(key)
+        .and_then(|i| i.as_table())
+        .map(|t| t.is_empty())
+        .unwrap_or(false);
+    if empty {
+        doc.as_table_mut().remove(key);
+    }
+}
+
+fn collect_provider_env_keys(doc: &DocumentMut, binding: Option<&TargetBinding>) -> Vec<String> {
+    let mut keys = Vec::new();
+    if let Some(providers) = doc.get("model_providers").and_then(|v| v.as_table()) {
+        for (id, item) in providers.iter() {
+            if !is_managed_provider(id, binding) {
+                continue;
+            }
+            if let Some(env_key) = item.get("env_key").and_then(|i| i.as_str()) {
+                if !env_key.is_empty() && !keys.iter().any(|k| k == env_key) {
+                    keys.push(env_key.to_string());
+                }
+            }
+        }
+    }
+    if let Some(b) = binding {
+        for key in &b.managed_env_keys {
+            if !keys.iter().any(|k| k == key) {
+                keys.push(key.clone());
+            }
+        }
+    }
+    keys
+}
+
+/// Strip custom relay providers and injected keys so Codex uses the built-in
+/// `openai` provider (ChatGPT login / `auth.json`). Leaves MCP, sandbox,
+/// and official credentials untouched.
+pub fn restore_official(
+    binding: Option<&TargetBinding>,
+    codex_home_override: Option<&str>,
+    backup_root: &PathBuf,
+) -> AppResult<crate::adapters::RestoreOfficialOutcome> {
+    restore_official_at(
+        &config_path(codex_home_override)?,
+        &codex_env_path()?,
+        &model_catalog_path(codex_home_override)?,
+        binding,
+        backup_root,
+    )
+}
+
+fn restore_official_at(
+    cfg_path: &std::path::Path,
+    env_path: &std::path::Path,
+    catalog_path: &std::path::Path,
+    binding: Option<&TargetBinding>,
+    backup_root: &PathBuf,
+) -> AppResult<crate::adapters::RestoreOfficialOutcome> {
+    let mut backup_paths = Vec::new();
+    let mut env_keys = Vec::new();
+
+    if cfg_path.exists() {
+        let bak = backup_file(cfg_path, backup_root)?;
+        backup_paths.push(bak.display().to_string());
+        let text = fs::read_to_string(cfg_path)?;
+        let mut doc = text
+            .parse::<DocumentMut>()
+            .map_err(|e| AppError::new("invalid_config", format!("invalid config.toml: {e}")))?;
+
+        env_keys.extend(collect_provider_env_keys(&doc, binding));
+        strip_official_config(&mut doc, binding);
+
+        if let Err(e) = atomic_write(cfg_path, doc.to_string().as_bytes(), false) {
+            let _ = restore_file(&bak, cfg_path);
+            return Err(e);
+        }
+    }
+
+    if catalog_path.exists() {
+        let bak = backup_file(catalog_path, backup_root)?;
+        backup_paths.push(bak.display().to_string());
+        let _ = fs::remove_file(catalog_path);
+    }
+
+    if env_path.exists() {
+        let bak = backup_file(env_path, backup_root)?;
+        backup_paths.push(bak.display().to_string());
+        let mut lines = read_env_file(env_path)?;
+        for key in list_defined_keys(&lines) {
+            if key.starts_with("XIAOBAI_") && !env_keys.iter().any(|k| k == &key) {
+                env_keys.push(key);
+            }
+        }
+        for key in &env_keys {
+            remove_env_key(&mut lines, key);
+        }
+        if let Err(e) = write_env_file(env_path, &lines) {
+            let _ = restore_file(&bak, env_path);
+            return Err(e);
+        }
+    }
+
+    Ok(crate::adapters::RestoreOfficialOutcome {
+        backup_paths,
+        env_keys,
+    })
+}
+
+fn strip_official_config(doc: &mut DocumentMut, binding: Option<&TargetBinding>) {
+    let mut removed_relay = binding.is_some();
+
+    let live_provider = doc
+        .get("model_provider")
+        .and_then(|i| i.as_str())
+        .map(|s| s.to_string());
+    let mut provider_ids = Vec::new();
+    if let Some(providers) = doc.get("model_providers").and_then(|v| v.as_table()) {
+        for (id, _) in providers.iter() {
+            if is_managed_provider(id, binding) {
+                provider_ids.push(id.to_string());
+            }
+        }
+    }
+    if !provider_ids.is_empty() {
+        removed_relay = true;
+    }
+    if let Some(providers) = doc
+        .get_mut("model_providers")
+        .and_then(|v| v.as_table_mut())
+    {
+        for id in &provider_ids {
+            providers.remove(id);
+        }
+    }
+    prune_empty_table(doc, "model_providers");
+
+    let provider_was_relay = live_provider
+        .as_deref()
+        .map(|p| is_managed_provider(p, binding))
+        .unwrap_or(false);
+    if provider_was_relay {
+        removed_relay = true;
+        doc.as_table_mut().remove("model_provider");
+        doc.as_table_mut().remove("model");
+        if binding
+            .map(|b| b.expected_fields.contains_key("model_reasoning_effort"))
+            .unwrap_or(true)
+        {
+            doc.as_table_mut().remove("model_reasoning_effort");
+        }
+    }
+
+    if doc.get("openai_base_url").is_some() {
+        removed_relay = true;
+        doc.as_table_mut().remove("openai_base_url");
+    }
+
+    let expected_catalog = binding.and_then(|b| b.expected_fields.get("model_catalog_json"));
+    let live_catalog = doc
+        .get("model_catalog_json")
+        .and_then(|i| i.as_str())
+        .map(|s| s.to_string());
+    let catalog_is_ours = live_catalog
+        .as_deref()
+        .map(|p| {
+            p.ends_with("xiaobai-model-catalog.json")
+                || expected_catalog.map(|e| e.as_str()) == Some(p)
+        })
+        .unwrap_or(false);
+    if catalog_is_ours {
+        doc.as_table_mut().remove("model_catalog_json");
+    }
+
+    if removed_relay {
+        doc.as_table_mut().remove("web_search");
+        if let Some(tools) = doc.get_mut("tools").and_then(|i| i.as_table_like_mut()) {
+            tools.remove("view_image");
+        }
+        prune_empty_table(doc, "tools");
+        if let Some(features) = doc.get_mut("features").and_then(|i| i.as_table_like_mut()) {
+            features.remove("image_generation");
+        }
+        prune_empty_table(doc, "features");
+    }
+}
+
 pub fn summary_from_config(doc: &DocumentMut) -> HashMap<String, Option<String>> {
     let mut out = HashMap::new();
     if let Some(m) = doc.get("model").and_then(|i| i.as_str()) {
@@ -1031,5 +1222,177 @@ mod capability_write_tests {
             .and_then(|t| t.get("image_generation"))
             .is_none());
         assert_eq!(doc["features"]["fast_mode"].as_bool(), Some(true));
+    }
+}
+
+#[cfg(test)]
+mod restore_official_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn sample_binding(provider: &str, env_key: &str) -> TargetBinding {
+        let mut expected = HashMap::new();
+        expected.insert("model".into(), "relay-model".into());
+        expected.insert("model_provider".into(), provider.into());
+        expected.insert("model_reasoning_effort".into(), "high".into());
+        expected.insert(
+            "model_catalog_json".into(),
+            "/tmp/xiaobai-model-catalog.json".into(),
+        );
+        expected.insert("web_search".into(), "disabled".into());
+        TargetBinding {
+            target: TargetKind::Codex,
+            site_id: Some("s1".into()),
+            site_name_snapshot: "Relay".into(),
+            model_id: "relay-model".into(),
+            provider_id: Some(provider.into()),
+            key_fingerprint: "x".into(),
+            managed_paths: vec![],
+            managed_env_keys: vec![env_key.into()],
+            expected_fields: expected,
+            orphan: false,
+            applied_at: 1,
+            apply_record_id: None,
+        }
+    }
+
+    #[test]
+    fn restore_official_removes_relay_and_keeps_user_settings() {
+        let tmp = tempdir().unwrap();
+        let home = tmp.path();
+        let provider = provider_id_for_site("s1");
+        let env_key = env_key_for_site("s1");
+        fs::write(
+            home.join("config.toml"),
+            format!(
+                r#"model = "relay-model"
+model_provider = "{provider}"
+model_reasoning_effort = "high"
+openai_base_url = "https://relay.example.com/v1"
+web_search = "disabled"
+model_catalog_json = "{catalog}"
+
+[model_providers.{provider}]
+name = "Relay"
+base_url = "https://relay.example.com/v1"
+env_key = "{env_key}"
+wire_api = "responses"
+
+[mcp_servers.foo]
+command = "uvx"
+
+[tools]
+view_image = true
+
+[features]
+image_generation = false
+fast_mode = true
+"#,
+                catalog = home.join("xiaobai-model-catalog.json").display()
+            ),
+        )
+        .unwrap();
+        fs::write(home.join("xiaobai-model-catalog.json"), r#"{"models":[]}"#).unwrap();
+        let env_path = home.join("codex.env");
+        fs::write(
+            &env_path,
+            format!("# header\nexport {env_key}=\"sk-relay\"\nexport KEEP_ME=\"1\"\n"),
+        )
+        .unwrap();
+        let bak = home.join("bak");
+        fs::create_dir_all(&bak).unwrap();
+        let binding = sample_binding(&provider, &env_key);
+        let out = restore_official_at(
+            &home.join("config.toml"),
+            &env_path,
+            &home.join("xiaobai-model-catalog.json"),
+            Some(&binding),
+            &bak,
+        )
+        .unwrap();
+        let text = fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(!text.contains("relay-model"));
+        assert!(!text.contains(&provider));
+        assert!(!text.contains("openai_base_url"));
+        assert!(!text.contains("model_catalog_json"));
+        assert!(!text.contains("web_search"));
+        assert!(!text.contains("view_image"));
+        assert!(!text.contains("image_generation"));
+        assert!(text.contains("command = \"uvx\""));
+        assert!(text.contains("fast_mode = true"));
+        assert!(!home.join("xiaobai-model-catalog.json").exists());
+        let env_text = fs::read_to_string(&env_path).unwrap();
+        assert!(!env_text.contains(&env_key));
+        assert!(env_text.contains("KEEP_ME"));
+        assert!(out.env_keys.contains(&env_key));
+        assert!(!out.backup_paths.is_empty());
+    }
+
+    #[test]
+    fn restore_official_without_binding_still_strips_xiaobai_providers() {
+        let tmp = tempdir().unwrap();
+        let home = tmp.path();
+        let provider = provider_id_for_site("s1");
+        fs::write(
+            home.join("config.toml"),
+            format!(
+                r#"model = "relay-model"
+model_provider = "{provider}"
+
+[model_providers.{provider}]
+name = "Relay"
+base_url = "https://relay.example.com/v1"
+env_key = "XIAOBAI_SITE_S1_API_KEY"
+wire_api = "responses"
+"#
+            ),
+        )
+        .unwrap();
+        let bak = home.join("bak");
+        fs::create_dir_all(&bak).unwrap();
+        restore_official_at(
+            &home.join("config.toml"),
+            &home.join("missing.env"),
+            &home.join("missing-catalog.json"),
+            None,
+            &bak,
+        )
+        .unwrap();
+        let text = fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(!text.contains(&provider));
+        assert!(!text.contains("model_provider"));
+        assert!(!text.contains("relay-model"));
+    }
+
+    #[test]
+    fn restore_official_leaves_true_official_config_alone() {
+        let tmp = tempdir().unwrap();
+        let home = tmp.path();
+        fs::write(
+            home.join("config.toml"),
+            r#"model = "gpt-5.4"
+model_provider = "openai"
+web_search = "cached"
+
+[mcp_servers.foo]
+command = "uvx"
+"#,
+        )
+        .unwrap();
+        let bak = home.join("bak");
+        fs::create_dir_all(&bak).unwrap();
+        restore_official_at(
+            &home.join("config.toml"),
+            &home.join("missing.env"),
+            &home.join("missing-catalog.json"),
+            None,
+            &bak,
+        )
+        .unwrap();
+        let text = fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(text.contains("gpt-5.4"));
+        assert!(text.contains("model_provider = \"openai\""));
+        assert!(text.contains("web_search = \"cached\""));
+        assert!(text.contains("command = \"uvx\""));
     }
 }

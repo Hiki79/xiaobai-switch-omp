@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntdApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,15 +38,23 @@ describe("ApplyFooter", () => {
     const onApply = vi.fn();
     render(
       <Wrapper>
-        <ApplyFooter target="claude_code" loading={false} disabled={false} onApply={onApply} />
+        <ApplyFooter
+          target="claude_code"
+          loading={false}
+          disabled={false}
+          onApply={onApply}
+          onRestoreOfficial={vi.fn()}
+        />
       </Wrapper>,
     );
 
     const footer = screen.getByTestId("apply-footer");
     expect(footer).toHaveTextContent("配置备份记录");
     expect(footer).toHaveTextContent("应用配置");
+    expect(footer).toHaveTextContent("还原官方配置");
     expect(screen.getByRole("button", { name: /配置备份记录/ }).querySelector("svg.lucide")).toBeTruthy();
     expect(screen.getByRole("button", { name: "应用配置" }).querySelector("svg.lucide")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "还原官方配置" }).querySelector("svg.lucide")).toBeTruthy();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /配置备份记录/ }));
@@ -59,10 +67,68 @@ describe("ApplyFooter", () => {
     expect(onApply).toHaveBeenCalledTimes(1);
   });
 
+  it("confirms before restoring official config", async () => {
+    const onRestoreOfficial = vi.fn().mockResolvedValue(undefined);
+    render(
+      <Wrapper>
+        <ApplyFooter
+          target="claude_code"
+          loading={false}
+          disabled={false}
+          onApply={() => {}}
+          onRestoreOfficial={onRestoreOfficial}
+        />
+      </Wrapper>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "还原官方配置" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("还原为官方配置？");
+    expect(dialog).toHaveTextContent("ANTHROPIC_BASE_URL");
+    expect(onRestoreOfficial).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "还原官方配置" }));
+    await waitFor(() => {
+      expect(onRestoreOfficial).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("已还原官方配置").length).toBeGreaterThan(0);
+    });
+    expect(screen.getByText("已清除 Claude Code 的中转配置，可使用官方账号登录。")).toBeInTheDocument();
+  });
+
+  it("uses Codex-specific official restore copy", async () => {
+    render(
+      <Wrapper>
+        <ApplyFooter
+          target="codex"
+          loading={false}
+          disabled
+          onApply={() => {}}
+          onRestoreOfficial={vi.fn()}
+        />
+      </Wrapper>,
+    );
+
+    expect(screen.getByRole("button", { name: "应用配置" })).toBeDisabled();
+    const restore = screen.getByRole("button", { name: "还原官方配置" });
+    expect(restore).toBeEnabled();
+    fireEvent.click(restore);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("openai_base_url");
+    expect(dialog).toHaveTextContent("ChatGPT");
+  });
+
   it("does not list backups until the modal is opened", () => {
     render(
       <Wrapper>
-        <ApplyFooter target="claude_code" loading={false} disabled={false} onApply={() => {}} />
+        <ApplyFooter
+          target="claude_code"
+          loading={false}
+          disabled={false}
+          onApply={() => {}}
+          onRestoreOfficial={() => {}}
+        />
       </Wrapper>,
     );
     expect(screen.queryByText("shuai")).not.toBeInTheDocument();

@@ -10,3 +10,9 @@ pub struct RewriteOutcome {
     pub expected_fields: HashMap<String, String>,
     pub message: String,
 }
+
+pub struct RestoreOfficialOutcome {
+    #[allow(dead_code)]
+    pub backup_paths: Vec<String>,
+    pub env_keys: Vec<String>,
+}

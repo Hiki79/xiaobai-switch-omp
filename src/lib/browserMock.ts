@@ -430,7 +430,8 @@ export async function handleBrowserCommand<T>(
       };
       return result as T;
     }
-    case "revert_target": {
+    case "revert_target":
+    case "restore_official_target": {
       const target = args?.target as TargetKind;
       targetStatuses = targetStatuses.map((row) =>
         row.kind === target

@@ -1,5 +1,7 @@
 use crate::backup::{self, BackupMeta, BackupMetaFile};
-use crate::capabilities::{capability_on, CODEX_COMPACT, CODEX_IMAGEGEN, CODEX_SEARCH, CODEX_VISION};
+use crate::capabilities::{
+    capability_on, CODEX_COMPACT, CODEX_IMAGEGEN, CODEX_SEARCH, CODEX_VISION,
+};
 use crate::domain::{
     ApplyRecordDto, ApplyResult, ApplyStatus, ApplyTargetResult, BackupInfo, BackupPreview,
     CapabilitySource, ClaudeApplyOptions, ClaudeAuthKeyStyle, ClaudeEffortLevel, CodexApplyOptions,
@@ -395,6 +397,81 @@ pub fn revert_target(
         .with_conn(|c| repo::binding::delete_binding(c, target))?;
     crate::tray::request_tray_menu_sync(&app);
     Ok(())
+}
+
+#[tauri::command]
+pub fn restore_official_target(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    target: TargetKind,
+) -> AppResult<()> {
+    let _lock = try_lock_target(target.as_str())?;
+    let settings = state.db.with_conn(repo::settings::get_settings)?;
+    let binding = state
+        .db
+        .with_conn(|c| repo::binding::get_binding(c, target))?;
+
+    let applied_at = Utc::now().timestamp_millis();
+    let backup_root = backups_dir()?
+        .join(target.as_str())
+        .join(format!("{}", applied_at));
+    fs::create_dir_all(&backup_root)?;
+
+    let (site_name, model_id) = match &binding {
+        Some(b) => (b.site_name_snapshot.as_str(), b.model_id.as_str()),
+        None => ("official", "official"),
+    };
+
+    let result = match target {
+        TargetKind::ClaudeCode => crate::adapters::claude_code::restore_official(
+            settings.claude_home_override.as_deref(),
+            &backup_root,
+        )
+        .map(|_| ()),
+        TargetKind::Codex => crate::adapters::codex::restore_official(
+            binding.as_ref(),
+            settings.codex_home_override.as_deref(),
+            &backup_root,
+        )
+        .map(|outcome| {
+            for key in &outcome.env_keys {
+                let _ = crate::env_inject::remove_codex_env(&settings, key);
+            }
+        }),
+    };
+
+    match result {
+        Ok(()) => {
+            if binding.is_some() {
+                state
+                    .db
+                    .with_conn(|c| repo::binding::delete_binding(c, target))?;
+            }
+            finalize_backup_dir(
+                &backup_root,
+                target,
+                site_name,
+                model_id,
+                None,
+                applied_at,
+                settings.max_backup_copies,
+            );
+            crate::tray::request_tray_menu_sync(&app);
+            Ok(())
+        }
+        Err(e) => {
+            finalize_backup_dir(
+                &backup_root,
+                target,
+                site_name,
+                model_id,
+                None,
+                applied_at,
+                settings.max_backup_copies,
+            );
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]

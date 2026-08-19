@@ -122,6 +122,7 @@ pub fn run() {
             commands::cleanup_orphan_target,
             commands::apply_site,
             commands::revert_target,
+            commands::restore_official_target,
             commands::list_apply_records,
             commands::list_backups,
             commands::preview_backup,

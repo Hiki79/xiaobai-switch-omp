@@ -27,6 +27,7 @@ interface ApplyState {
   ensureApplyData: () => Promise<void>;
   apply: (req: ApplyRequest) => Promise<ApplyResult>;
   revert: (target: TargetKind) => Promise<void>;
+  restoreOfficial: (target: TargetKind) => Promise<void>;
   cleanupOrphan: (target: TargetKind) => Promise<void>;
   loadRecords: () => Promise<void>;
   loadBackups: (target?: TargetKind) => Promise<void>;
@@ -115,6 +116,11 @@ export const useApplyStore = create<ApplyState>((set, get) => ({
   revert: async (target) => {
     await invoke("revert_target", { target });
     await get().loadStatus({ force: true });
+  },
+  restoreOfficial: async (target) => {
+    await invoke("restore_official_target", { target });
+    await get().loadStatus({ force: true });
+    await get().loadBackups();
   },
   cleanupOrphan: async (target) => {
     await invoke("cleanup_orphan_target", { target });

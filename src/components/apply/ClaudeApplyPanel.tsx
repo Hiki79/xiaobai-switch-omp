@@ -27,6 +27,7 @@ export const ClaudeApplyPanel = memo(function ClaudeApplyPanel() {
   const loadStatus = useApplyStore((s) => s.loadStatus);
   const apply = useApplyStore((s) => s.apply);
   const revert = useApplyStore((s) => s.revert);
+  const restoreOfficial = useApplyStore((s) => s.restoreOfficial);
   const cleanupOrphan = useApplyStore((s) => s.cleanupOrphan);
   const statusLoading = useApplyStore((s) => s.loading);
 
@@ -255,6 +256,7 @@ export const ClaudeApplyPanel = memo(function ClaudeApplyPanel() {
         loading={applying}
         disabled={!modelId}
         onApply={() => void handleApply()}
+        onRestoreOfficial={() => restoreOfficial("claude_code")}
       />
     </div>
   );
