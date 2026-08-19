@@ -170,6 +170,49 @@ fn detect_windows_inet() -> Option<String> {
     parse_windows_proxy_server(&server)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedProxy {
+    Disabled,
+    Url(String),
+    Unset,
+}
+
+/// Apply the same proxy rules used by model fetch / URL probe.
+/// `system` reads scutil / Windows Internet Settings, then HTTP(S)_PROXY.
+/// `none` disables proxies (including env). `custom` requires host+port.
+pub fn resolve_proxy(settings: &AppSettings) -> AppResult<ResolvedProxy> {
+    match settings.proxy_mode.as_str() {
+        "none" => Ok(ResolvedProxy::Disabled),
+        "custom" => {
+            let port = settings.proxy_port.unwrap_or(0);
+            let host = settings.proxy_host.as_deref().unwrap_or("");
+            Ok(ResolvedProxy::Url(custom_proxy_url(
+                &settings.proxy_protocol,
+                host,
+                port,
+            )?))
+        }
+        _ => Ok(detect_system_proxy()
+            .map(ResolvedProxy::Url)
+            .unwrap_or(ResolvedProxy::Unset)),
+    }
+}
+
+pub fn apply_resolved_proxy(
+    builder: reqwest::ClientBuilder,
+    resolved: &ResolvedProxy,
+) -> AppResult<reqwest::ClientBuilder> {
+    match resolved {
+        ResolvedProxy::Disabled => Ok(builder.no_proxy()),
+        ResolvedProxy::Url(url) => {
+            let proxy = reqwest::Proxy::all(url)
+                .map_err(|e| AppError::new("validation_failed", e.to_string()))?;
+            Ok(builder.proxy(proxy))
+        }
+        ResolvedProxy::Unset => Ok(builder),
+    }
+}
+
 pub fn build_client(settings: &AppSettings, timeout: Duration) -> AppResult<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
         .timeout(timeout)
@@ -177,26 +220,7 @@ pub fn build_client(settings: &AppSettings, timeout: Duration) -> AppResult<reqw
         .redirect(reqwest::redirect::Policy::limited(5))
         .user_agent(default_user_agent());
 
-    match settings.proxy_mode.as_str() {
-        "none" => {
-            builder = builder.no_proxy();
-        }
-        "custom" => {
-            let port = settings.proxy_port.unwrap_or(0);
-            let host = settings.proxy_host.as_deref().unwrap_or("");
-            let url = custom_proxy_url(&settings.proxy_protocol, host, port)?;
-            let proxy = reqwest::Proxy::all(&url)
-                .map_err(|e| AppError::new("validation_failed", e.to_string()))?;
-            builder = builder.proxy(proxy);
-        }
-        _ => {
-            if let Some(url) = detect_system_proxy() {
-                if let Ok(proxy) = reqwest::Proxy::all(&url) {
-                    builder = builder.proxy(proxy);
-                }
-            }
-        }
-    }
+    builder = apply_resolved_proxy(builder, &resolve_proxy(settings)?)?;
 
     builder
         .build()
@@ -298,5 +322,44 @@ mod tests {
 
         s.proxy_host = None;
         assert!(build_client(&s, Duration::from_secs(2)).is_err());
+    }
+
+    #[test]
+    fn resolve_proxy_none_disables() {
+        let mut s = AppSettings::default();
+        s.proxy_mode = "none".into();
+        assert_eq!(resolve_proxy(&s).unwrap(), ResolvedProxy::Disabled);
+    }
+
+    #[test]
+    fn resolve_proxy_custom_url() {
+        let mut s = AppSettings::default();
+        s.proxy_mode = "custom".into();
+        s.proxy_protocol = "socks5".into();
+        s.proxy_host = Some("127.0.0.1".into());
+        s.proxy_port = Some(7890);
+        assert_eq!(
+            resolve_proxy(&s).unwrap(),
+            ResolvedProxy::Url("socks5://127.0.0.1:7890".into())
+        );
+    }
+
+    #[test]
+    fn resolve_proxy_custom_rejects_missing_host() {
+        let mut s = AppSettings::default();
+        s.proxy_mode = "custom".into();
+        s.proxy_host = None;
+        s.proxy_port = Some(7890);
+        assert!(resolve_proxy(&s).is_err());
+    }
+
+    #[test]
+    fn resolve_proxy_system_follows_detector() {
+        let s = AppSettings::default();
+        assert_eq!(s.proxy_mode, "system");
+        let expected = detect_system_proxy()
+            .map(ResolvedProxy::Url)
+            .unwrap_or(ResolvedProxy::Unset);
+        assert_eq!(resolve_proxy(&s).unwrap(), expected);
     }
 }

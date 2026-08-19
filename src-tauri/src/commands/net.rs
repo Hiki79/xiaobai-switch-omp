@@ -24,6 +24,26 @@ fn settings_client(state: &AppState, timeout: Duration) -> AppResult<reqwest::Cl
 }
 
 #[tauri::command]
+pub fn resolve_http_proxy(state: State<'_, AppState>) -> AppResult<Option<String>> {
+    let settings = state.db.with_conn(repo::settings::get_settings)?;
+    let resolved = crate::http_client::resolve_proxy(&settings)?;
+    match resolved {
+        crate::http_client::ResolvedProxy::Url(url) => {
+            tracing::info!(mode = %settings.proxy_mode, proxy = %url, "resolved http proxy");
+            Ok(Some(url))
+        }
+        crate::http_client::ResolvedProxy::Disabled => {
+            tracing::info!(mode = %settings.proxy_mode, "resolved http proxy: disabled");
+            Ok(None)
+        }
+        crate::http_client::ResolvedProxy::Unset => {
+            tracing::info!(mode = %settings.proxy_mode, "resolved http proxy: unset");
+            Ok(None)
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn fetch_http_text(state: State<'_, AppState>, url: String) -> AppResult<HttpTextResult> {
     let client = settings_client(&state, Duration::from_secs(8))?;
 

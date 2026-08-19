@@ -527,6 +527,10 @@ export async function handleBrowserCommand<T>(
       };
       return empty as T;
     }
+    case "resolve_http_proxy":
+      return null as T;
+    case "check_app_update":
+      return null as T;
     case "probe_urls": {
       const urls = (args?.urls as string[]) ?? [];
       const results: UrlProbeResult[] = urls.map((url, i) => ({

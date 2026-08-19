@@ -6348,7 +6348,7 @@ dependencies = [
 
 [[package]]
 name = "xiaobai-switch"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -6383,6 +6383,7 @@ dependencies = [
  "toml_edit 0.22.27",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "winreg 0.52.0",
 ]

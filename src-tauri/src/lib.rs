@@ -135,6 +135,8 @@ pub fn run() {
             commands::fetch_http_text,
             commands::fetch_http_bytes,
             commands::probe_urls,
+            commands::resolve_http_proxy,
+            commands::check_app_update,
             commands::take_pending_deep_link,
             commands::restore_main_window,
             commands::force_quit,

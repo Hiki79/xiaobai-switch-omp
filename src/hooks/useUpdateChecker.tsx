@@ -4,8 +4,6 @@ import { useTranslation } from "react-i18next";
 import { invoke, isTauri } from "@/lib/invoke";
 import { useSettingsStore } from "@/stores";
 
-const CHECK_TIMEOUT_MS = 15_000;
-
 type UpdateLike = {
   version: string;
   body?: string | null;
@@ -56,8 +54,25 @@ function fetchUpdateStatus(): Promise<Fetched> {
   if (inFlight) return inFlight;
   inFlight = (async () => {
     try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = (await check({ timeout: CHECK_TIMEOUT_MS })) as UpdateLike | null;
+      const { Update } = await import("@tauri-apps/plugin-updater");
+      const metadata = await invoke<{
+        rid: number;
+        currentVersion: string;
+        version: string;
+        date?: string | null;
+        body?: string | null;
+        rawJson: Record<string, unknown>;
+      } | null>("check_app_update");
+      const update = metadata
+        ? (new Update({
+            rid: metadata.rid,
+            currentVersion: metadata.currentVersion,
+            version: metadata.version,
+            date: metadata.date ?? undefined,
+            body: metadata.body ?? undefined,
+            rawJson: metadata.rawJson,
+          }) as unknown as UpdateLike)
+        : null;
       return update ? { status: "available" as const, update } : { status: "latest" as const };
     } catch (error) {
       return { status: "error" as const, error };

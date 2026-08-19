@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetUpdateCheckerForTests, useUpdateChecker } from "./useUpdateChecker";
 
 const mocks = vi.hoisted(() => ({
-  check: vi.fn(),
   confirm: vi.fn(),
   info: vi.fn(),
   messageSuccess: vi.fn(),
@@ -12,11 +11,20 @@ const mocks = vi.hoisted(() => ({
   hideLoading: vi.fn(),
   messageLoading: vi.fn(),
   isTauri: vi.fn(() => true),
-  invoke: vi.fn(async () => undefined),
+  invoke: vi.fn(async (): Promise<unknown> => null),
 }));
 
 vi.mock("@tauri-apps/plugin-updater", () => ({
-  check: mocks.check,
+  Update: class Update {
+    version: string;
+    body?: string | null;
+    constructor(metadata: { version: string; body?: string | null }) {
+      this.version = metadata.version;
+      this.body = metadata.body;
+    }
+    close = async () => undefined;
+    downloadAndInstall = async () => undefined;
+  },
 }));
 
 vi.mock("@/lib/invoke", () => ({
@@ -52,8 +60,19 @@ vi.mock("antd", async (importOriginal) => {
   };
 });
 
+function updateMetadata(update: { version: string; body?: string | null } | null) {
+  if (!update) return null;
+  return {
+    rid: 1,
+    currentVersion: "0.0.1",
+    version: update.version,
+    body: update.body ?? null,
+    rawJson: {},
+  };
+}
+
 async function checkForUpdate(update: { version: string; body?: string | null } | null) {
-  mocks.check.mockResolvedValue(update);
+  mocks.invoke.mockResolvedValue(updateMetadata(update));
   const { result } = renderHook(() => useUpdateChecker());
 
   let found = false;
@@ -86,7 +105,7 @@ describe("useUpdateChecker", () => {
   });
 
   it("stays silent when no update is found during an auto-check", async () => {
-    mocks.check.mockResolvedValue(null);
+    mocks.invoke.mockResolvedValue(null);
     const { result } = renderHook(() => useUpdateChecker());
     await act(async () => {
       expect(await result.current.checkForUpdate({ silent: true })).toBe(false);
@@ -103,12 +122,12 @@ describe("useUpdateChecker", () => {
       expect(await result.current.checkForUpdate()).toBe(false);
     });
     expect(mocks.messageInfo).toHaveBeenCalledWith("settings.checkUpdateDesktopOnly");
-    expect(mocks.check).not.toHaveBeenCalled();
+    expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
   it("waits on an in-flight silent check and still reports the result", async () => {
     let resolveCheck: ((value: null) => void) | undefined;
-    mocks.check.mockImplementation(
+    mocks.invoke.mockImplementation(
       () =>
         new Promise((resolve) => {
           resolveCheck = resolve;
@@ -128,7 +147,7 @@ describe("useUpdateChecker", () => {
       });
     });
     await waitFor(() => {
-      expect(mocks.check).toHaveBeenCalledTimes(1);
+      expect(mocks.invoke).toHaveBeenCalledTimes(1);
     });
 
     act(() => {
@@ -152,7 +171,7 @@ describe("useUpdateChecker", () => {
     });
     expect(silentFound).toBe(false);
     expect(manualFound).toBe(false);
-    expect(mocks.check).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
     expect(mocks.messageSuccess).toHaveBeenCalledWith("settings.noUpdate");
     expect(mocks.hideLoading).toHaveBeenCalled();
   });
@@ -179,9 +198,18 @@ describe("useUpdateChecker", () => {
     expect(screen.queryByTestId("update-release-notes")).not.toBeInTheDocument();
   });
 
+  it("checks updates through the host so network proxy settings apply", async () => {
+    mocks.invoke.mockResolvedValue(null);
+    const { result } = renderHook(() => useUpdateChecker());
+    await act(async () => {
+      expect(await result.current.checkForUpdate()).toBe(false);
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("check_app_update");
+  });
+
   it("does not toast a failed silent check", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    mocks.check.mockRejectedValue(new Error("offline"));
+    mocks.invoke.mockRejectedValue(new Error("offline"));
     const { result } = renderHook(() => useUpdateChecker());
     await act(async () => {
       expect(await result.current.checkForUpdate({ silent: true })).toBe(false);
