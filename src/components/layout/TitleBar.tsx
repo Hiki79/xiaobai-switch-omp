@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dropdown, theme, Tooltip } from "antd";
 import type { MenuProps } from "antd";
-import { ArrowDownCircle, Github, Globe, Minus, Moon, Monitor, Pin, PinOff, Settings, Square, Sun, X, XCircle } from "lucide-react";
+import { ArrowDownCircle, Github, Globe, Loader2, Minus, Moon, Monitor, Pin, PinOff, Settings, Square, Sun, X, XCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore, useUIStore } from "@/stores";
 import { invoke, isTauri } from "@/lib/invoke";
 import { LANG_OPTIONS, APP_NAME, GITHUB_REPO_URL } from "@/lib/constants";
 import { openExternalUrl } from "@/lib/openUrl";
-import { useUpdateChecker } from "@/hooks/useUpdateChecker";
+import { useUpdateCheckBusy, useUpdateChecker } from "@/hooks/useUpdateChecker";
 
 const IS_WINDOWS = navigator.userAgent.includes("Windows");
 
@@ -45,10 +45,10 @@ export function TitleBar() {
   const saveSettings = useSettingsStore((s) => s.saveSettings);
   const [pinned, setPinned] = useState(alwaysOnTop);
   const [isMaximized, setIsMaximized] = useState(false);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInSettings = activePage === "settings";
   const { checkForUpdate } = useUpdateChecker();
+  const checkingUpdate = useUpdateCheckBusy();
 
   useEffect(() => {
     setPinned(alwaysOnTop);
@@ -70,14 +70,10 @@ export function TitleBar() {
     };
   }, []);
 
-  const handleCheckUpdate = useCallback(async () => {
-    setCheckingUpdate(true);
-    try {
-      await checkForUpdate();
-    } finally {
-      setCheckingUpdate(false);
-    }
-  }, [checkForUpdate]);
+  const handleCheckUpdate = useCallback(() => {
+    if (checkingUpdate) return;
+    void checkForUpdate();
+  }, [checkForUpdate, checkingUpdate]);
 
   const handlePin = useCallback(async () => {
     const next = !pinned;
@@ -244,19 +240,23 @@ export function TitleBar() {
           </Dropdown>
 
           {isTauri() && (
-            <Tooltip title={t("settings.checkUpdate")}>
+            <Tooltip title={checkingUpdate ? t("settings.checkingUpdate") : t("settings.checkUpdate")}>
               <button
                 type="button"
-                aria-label={t("settings.checkUpdate")}
+                aria-label={checkingUpdate ? t("settings.checkingUpdate") : t("settings.checkUpdate")}
                 disabled={checkingUpdate}
-                onClick={() => void handleCheckUpdate()}
+                onClick={handleCheckUpdate}
                 style={{
                   ...buttonBase,
                   opacity: checkingUpdate ? 0.5 : 1,
                 }}
                 {...hoverHandlers(token.colorTextSecondary)}
               >
-                <ArrowDownCircle size={14} />
+                {checkingUpdate ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <ArrowDownCircle size={14} />
+                )}
               </button>
             </Tooltip>
           )}

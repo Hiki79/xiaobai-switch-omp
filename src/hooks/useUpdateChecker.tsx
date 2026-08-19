@@ -1,10 +1,72 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { App, Button, Progress } from "antd";
 import { useTranslation } from "react-i18next";
 import { invoke, isTauri } from "@/lib/invoke";
 import { useSettingsStore } from "@/stores";
 
-let checkInFlight = false;
+const CHECK_TIMEOUT_MS = 15_000;
+
+type UpdateLike = {
+  version: string;
+  body?: string | null;
+  close: () => Promise<void>;
+  downloadAndInstall: (
+    onEvent?: (event: {
+      event: "Started" | "Progress" | "Finished";
+      data: { contentLength?: number; chunkLength?: number };
+    }) => void,
+  ) => Promise<void>;
+};
+
+type Fetched =
+  | { status: "latest" }
+  | { status: "available"; update: UpdateLike }
+  | { status: "error"; error: unknown };
+
+let inFlight: Promise<Fetched> | null = null;
+let busy = false;
+const busyListeners = new Set<(value: boolean) => void>();
+let updatePromptOpen = false;
+
+function setBusy(next: boolean) {
+  if (busy === next) return;
+  busy = next;
+  busyListeners.forEach((listener) => listener(next));
+}
+
+export function resetUpdateCheckerForTests() {
+  inFlight = null;
+  updatePromptOpen = false;
+  setBusy(false);
+}
+
+export function useUpdateCheckBusy() {
+  const [value, setValue] = useState(busy);
+  useEffect(() => {
+    busyListeners.add(setValue);
+    setValue(busy);
+    return () => {
+      busyListeners.delete(setValue);
+    };
+  }, []);
+  return value;
+}
+
+function fetchUpdateStatus(): Promise<Fetched> {
+  if (inFlight) return inFlight;
+  inFlight = (async () => {
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = (await check({ timeout: CHECK_TIMEOUT_MS })) as UpdateLike | null;
+      return update ? { status: "available" as const, update } : { status: "latest" as const };
+    } catch (error) {
+      return { status: "error" as const, error };
+    }
+  })().finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
 
 export function UpdateReleaseNotes({ content }: { content: string }) {
   return (
@@ -22,106 +84,120 @@ export function useUpdateChecker() {
   const { t } = useTranslation();
   const { modal, message } = App.useApp();
 
+  const presentUpdate = useCallback(
+    (update: UpdateLike, silent: boolean) => {
+      if (updatePromptOpen) return;
+      updatePromptOpen = true;
+      if (silent) {
+        void invoke("restore_main_window").catch(() => null);
+      }
+      modal.confirm({
+        title: t("settings.updateAvailable"),
+        centered: true,
+        content: (
+          <div>
+            <p>
+              {t("settings.newVersion")}: {update.version}
+            </p>
+            {update.body ? <UpdateReleaseNotes content={update.body} /> : null}
+          </div>
+        ),
+        okText: t("settings.updateNow"),
+        cancelText: t("settings.updateLater"),
+        onCancel: () => {
+          updatePromptOpen = false;
+        },
+        onOk: async () => {
+          updatePromptOpen = false;
+          let cancelled = false;
+          const handleCancel = async () => {
+            cancelled = true;
+            try {
+              await update.close();
+            } catch {
+              /* ignore */
+            }
+          };
+          const renderContent = (percent: number, status: "active" | "success") => (
+            <div>
+              <Progress percent={percent} status={status} />
+              {status !== "success" && (
+                <div style={{ textAlign: "right", marginTop: 12 }}>
+                  <Button onClick={() => void handleCancel()}>{t("settings.cancelUpdate")}</Button>
+                </div>
+              )}
+            </div>
+          );
+          const progressModal = modal.info({
+            title: t("settings.updating"),
+            content: renderContent(0, "active"),
+            closable: false,
+            footer: null,
+            maskClosable: false,
+            keyboard: false,
+          });
+          try {
+            let totalSize = 0;
+            let downloaded = 0;
+            await update.downloadAndInstall((event) => {
+              if (event.event === "Started" && event.data.contentLength) {
+                totalSize = event.data.contentLength;
+              } else if (event.event === "Progress") {
+                downloaded += event.data.chunkLength ?? 0;
+                if (totalSize > 0) {
+                  progressModal.update({
+                    content: renderContent(Math.round((downloaded / totalSize) * 100), "active"),
+                  });
+                }
+              } else if (event.event === "Finished") {
+                progressModal.update({ content: renderContent(100, "success") });
+              }
+            });
+            const { relaunch } = await import("@tauri-apps/plugin-process");
+            await relaunch();
+          } catch (e) {
+            progressModal.destroy();
+            if (!cancelled) {
+              message.error(t("settings.updateFailed"));
+              console.error("Update install failed:", e);
+            }
+          }
+        },
+      });
+    },
+    [t, modal, message],
+  );
+
   const checkForUpdate = useCallback(
     async (options?: { silent?: boolean }) => {
-      if (!isTauri()) return false;
-      if (checkInFlight) return false;
-      checkInFlight = true;
       const silent = options?.silent ?? false;
+      if (!isTauri()) {
+        if (!silent) message.info(t("settings.checkUpdateDesktopOnly"));
+        return false;
+      }
+
+      if (!silent) setBusy(true);
+      const hideLoading = silent ? undefined : message.loading(t("settings.checkingUpdate"), 0);
       try {
-        const { check } = await import("@tauri-apps/plugin-updater");
-        const update = await check();
-        if (!update) {
+        const result = await fetchUpdateStatus();
+        hideLoading?.();
+        if (result.status === "error") {
+          if (!silent) message.error(t("settings.checkUpdateFailed"));
+          console.error("Update check failed:", result.error);
+          return false;
+        }
+        if (result.status === "latest") {
           if (!silent) message.success(t("settings.noUpdate"));
           return false;
         }
-
-        if (silent) {
-          void invoke("restore_main_window").catch(() => null);
-        }
-
-        modal.confirm({
-          title: t("settings.updateAvailable"),
-          centered: true,
-          content: (
-            <div>
-              <p>
-                {t("settings.newVersion")}: {update.version}
-              </p>
-              {update.body ? <UpdateReleaseNotes content={update.body} /> : null}
-            </div>
-          ),
-          okText: t("settings.updateNow"),
-          cancelText: t("settings.updateLater"),
-          onOk: async () => {
-            let cancelled = false;
-            const handleCancel = async () => {
-              cancelled = true;
-              try {
-                await update.close();
-              } catch {
-                /* ignore */
-              }
-            };
-            const renderContent = (percent: number, status: "active" | "success") => (
-              <div>
-                <Progress percent={percent} status={status} />
-                {status !== "success" && (
-                  <div style={{ textAlign: "right", marginTop: 12 }}>
-                    <Button onClick={() => void handleCancel()}>{t("settings.cancelUpdate")}</Button>
-                  </div>
-                )}
-              </div>
-            );
-            const progressModal = modal.info({
-              title: t("settings.updating"),
-              content: renderContent(0, "active"),
-              closable: false,
-              footer: null,
-              maskClosable: false,
-              keyboard: false,
-            });
-            try {
-              let totalSize = 0;
-              let downloaded = 0;
-              await update.downloadAndInstall((event) => {
-                if (event.event === "Started" && event.data.contentLength) {
-                  totalSize = event.data.contentLength;
-                } else if (event.event === "Progress") {
-                  downloaded += event.data.chunkLength;
-                  if (totalSize > 0) {
-                    progressModal.update({
-                      content: renderContent(
-                        Math.round((downloaded / totalSize) * 100),
-                        "active",
-                      ),
-                    });
-                  }
-                } else if (event.event === "Finished") {
-                  progressModal.update({ content: renderContent(100, "success") });
-                }
-              });
-              const { relaunch } = await import("@tauri-apps/plugin-process");
-              await relaunch();
-            } catch (e) {
-              progressModal.destroy();
-              if (!cancelled) {
-                message.error(t("settings.updateFailed"));
-                console.error("Update install failed:", e);
-              }
-            }
-          },
-        });
+        presentUpdate(result.update, silent);
         return true;
-      } catch (e) {
-        if (!silent) message.error(t("settings.checkUpdateFailed"));
-        console.error("Update check failed:", e);
-        return false;
       } finally {
-        checkInFlight = false;
+        hideLoading?.();
+        if (!silent) setBusy(false);
       }
     },
-    [t, modal, message],
+    [t, message, presentUpdate],
   );
 
   return { checkForUpdate };

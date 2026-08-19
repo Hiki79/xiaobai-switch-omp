@@ -301,6 +301,8 @@
     "version": "Version",
     "groupUpdate": "Updates",
     "checkUpdate": "Check for Updates",
+    "checkingUpdate": "Checking for updates…",
+    "checkUpdateDesktopOnly": "Check for updates in the desktop app",
     "updateAvailable": "Update available",
     "newVersion": "New version",
     "updateNow": "Update now",

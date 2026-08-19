@@ -1,6 +1,6 @@
-import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useUpdateChecker } from "./useUpdateChecker";
+import { resetUpdateCheckerForTests, useUpdateChecker } from "./useUpdateChecker";
 
 const mocks = vi.hoisted(() => ({
   check: vi.fn(),
@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   info: vi.fn(),
   messageSuccess: vi.fn(),
   messageError: vi.fn(),
+  messageInfo: vi.fn(),
+  hideLoading: vi.fn(),
+  messageLoading: vi.fn(),
   isTauri: vi.fn(() => true),
   invoke: vi.fn(async () => undefined),
 }));
@@ -41,6 +44,8 @@ vi.mock("antd", async (importOriginal) => {
         message: {
           success: mocks.messageSuccess,
           error: mocks.messageError,
+          info: mocks.messageInfo,
+          loading: mocks.messageLoading,
         },
       }),
     },
@@ -66,12 +71,16 @@ describe("useUpdateChecker", () => {
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
+    resetUpdateCheckerForTests();
     mocks.isTauri.mockReturnValue(true);
+    mocks.messageLoading.mockReturnValue(mocks.hideLoading);
   });
 
   it("toasts when already on the latest version", async () => {
     const { found } = await checkForUpdate(null);
     expect(found).toBe(false);
+    expect(mocks.messageLoading).toHaveBeenCalledWith("settings.checkingUpdate", 0);
+    expect(mocks.hideLoading).toHaveBeenCalled();
     expect(mocks.messageSuccess).toHaveBeenCalledWith("settings.noUpdate");
     expect(mocks.confirm).not.toHaveBeenCalled();
   });
@@ -82,8 +91,70 @@ describe("useUpdateChecker", () => {
     await act(async () => {
       expect(await result.current.checkForUpdate({ silent: true })).toBe(false);
     });
+    expect(mocks.messageLoading).not.toHaveBeenCalled();
     expect(mocks.messageSuccess).not.toHaveBeenCalled();
     expect(mocks.messageError).not.toHaveBeenCalled();
+  });
+
+  it("explains when a manual check runs outside the desktop app", async () => {
+    mocks.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => useUpdateChecker());
+    await act(async () => {
+      expect(await result.current.checkForUpdate()).toBe(false);
+    });
+    expect(mocks.messageInfo).toHaveBeenCalledWith("settings.checkUpdateDesktopOnly");
+    expect(mocks.check).not.toHaveBeenCalled();
+  });
+
+  it("waits on an in-flight silent check and still reports the result", async () => {
+    let resolveCheck: ((value: null) => void) | undefined;
+    mocks.check.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCheck = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useUpdateChecker());
+
+    let silentDone = false;
+    let manualDone = false;
+    let silentFound = true;
+    let manualFound = true;
+
+    act(() => {
+      void result.current.checkForUpdate({ silent: true }).then((found) => {
+        silentFound = found;
+        silentDone = true;
+      });
+    });
+    await waitFor(() => {
+      expect(mocks.check).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      void result.current.checkForUpdate().then((found) => {
+        manualFound = found;
+        manualDone = true;
+      });
+    });
+
+    expect(mocks.messageLoading).toHaveBeenCalledWith("settings.checkingUpdate", 0);
+    expect(silentDone).toBe(false);
+    expect(manualDone).toBe(false);
+
+    await act(async () => {
+      resolveCheck?.(null);
+    });
+
+    await waitFor(() => {
+      expect(silentDone).toBe(true);
+      expect(manualDone).toBe(true);
+    });
+    expect(silentFound).toBe(false);
+    expect(manualFound).toBe(false);
+    expect(mocks.check).toHaveBeenCalledTimes(1);
+    expect(mocks.messageSuccess).toHaveBeenCalledWith("settings.noUpdate");
+    expect(mocks.hideLoading).toHaveBeenCalled();
   });
 
   it("renders update.body as release notes", async () => {
@@ -116,6 +187,7 @@ describe("useUpdateChecker", () => {
       expect(await result.current.checkForUpdate({ silent: true })).toBe(false);
     });
     expect(mocks.messageError).not.toHaveBeenCalled();
+    expect(mocks.messageLoading).not.toHaveBeenCalled();
     error.mockRestore();
   });
 });

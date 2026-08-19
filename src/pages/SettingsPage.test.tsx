@@ -11,6 +11,7 @@ import {
   GITHUB_REPO_URL,
 } from "@/lib/constants";
 import { useSettingsStore, useUIStore } from "@/stores";
+import { resetUpdateCheckerForTests } from "@/hooks/useUpdateChecker";
 import { SettingsPage } from "./SettingsPage";
 import "@/i18n";
 
@@ -131,6 +132,7 @@ describe("SettingsPage tray", () => {
 describe("SettingsPage about", () => {
   beforeEach(() => {
     resetBrowserMock();
+    resetUpdateCheckerForTests();
     useUIStore.setState({ settingsTab: "about" });
     useSettingsStore.setState({
       settings: useSettingsStore.getState().settings,
@@ -202,6 +204,22 @@ describe("SettingsPage about", () => {
     fireEvent.click(screen.getByRole("switch"));
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.autoCheckUpdate).toBe(false);
+    });
+  });
+
+  it("tells the user a manual check needs the desktop app", async () => {
+    render(
+      <Wrapper>
+        <SettingsPage />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "检查更新" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    await waitFor(() => {
+      expect(screen.getByText("请在桌面客户端中检查更新")).toBeInTheDocument();
     });
   });
 });

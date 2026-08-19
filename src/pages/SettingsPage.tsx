@@ -15,7 +15,7 @@ import { openExternalUrl } from "@/lib/openUrl";
 import type { AppPaths, AppSettings, ProxyMode, ProxyProtocol } from "@/types/domain";
 import { SettingsSidebar } from "@/components/settings/SettingsSidebar";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
-import { useUpdateChecker } from "@/hooks/useUpdateChecker";
+import { useUpdateCheckBusy, useUpdateChecker } from "@/hooks/useUpdateChecker";
 import appIconUrl from "../../assets/brand/app-icon-1024.png?url";
 
 const rowStyle: React.CSSProperties = { padding: "4px 0" };
@@ -442,11 +442,11 @@ function AboutSection() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
   const { checkForUpdate } = useUpdateChecker();
+  const checking = useUpdateCheckBusy();
   const settings = useSettingsStore((s) => s.settings);
   const saveSettings = useSettingsStore((s) => s.saveSettings);
   const [paths, setPaths] = useState<AppPaths | null>(null);
   const [version, setVersion] = useState(PACKAGE_VERSION);
-  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     void invoke<AppPaths>("get_app_paths")
@@ -457,13 +457,8 @@ function AboutSection() {
       .catch(() => null);
   }, []);
 
-  const handleCheckUpdate = async () => {
-    setChecking(true);
-    try {
-      await checkForUpdate();
-    } finally {
-      setChecking(false);
-    }
+  const handleCheckUpdate = () => {
+    void checkForUpdate();
   };
 
   const patch = async (partial: Partial<AppSettings>) => {
@@ -490,11 +485,12 @@ function AboutSection() {
         <div style={rowStyle} className="flex items-center justify-between gap-4">
           <span>{t("settings.checkUpdate")}</span>
           <Button
-            icon={<RefreshCw size={16} className={checking ? "animate-spin" : undefined} />}
+            icon={<RefreshCw size={16} />}
             loading={checking}
-            onClick={() => void handleCheckUpdate()}
+            disabled={checking}
+            onClick={handleCheckUpdate}
           >
-            {t("settings.checkUpdate")}
+            {checking ? t("settings.checkingUpdate") : t("settings.checkUpdate")}
           </Button>
         </div>
         <Divider style={{ margin: "8px 0" }} />
