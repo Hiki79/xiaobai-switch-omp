@@ -10,9 +10,13 @@ const brandDir = join(projectRoot, "assets", "brand");
 const tauriIconsDir = join(projectRoot, "src-tauri", "icons");
 const publicDir = join(projectRoot, "public");
 const artworkPath = join(brandDir, "app-icon-artwork.png");
+const artworkSvgPath = join(brandDir, "app-icon-artwork.svg");
 
 if (!existsSync(artworkPath)) {
   throw new Error(`Missing icon artwork: ${relative(projectRoot, artworkPath)}`);
+}
+if (!existsSync(artworkSvgPath)) {
+  throw new Error(`Missing icon artwork SVG: ${relative(projectRoot, artworkSvgPath)}`);
 }
 
 const artworkDataUri = `data:image/png;base64,${readFileSync(artworkPath).toString("base64")}`;
@@ -33,6 +37,26 @@ function superellipsePath({ x, y, size }, exponent = 5, steps = 160) {
   return `${points.join(" ")} Z`;
 }
 
+function artworkInner() {
+  const svg = readFileSync(artworkSvgPath, "utf8");
+  const inner = svg.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "").trim();
+  if (!inner) throw new Error("app-icon-artwork.svg is empty");
+  return inner;
+}
+
+function composeVectorSvg(clipInner, { x, y, size }) {
+  const scale = size / 1024;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="XiaoBaiSwitch">
+  <defs><clipPath id="plate">${clipInner}</clipPath></defs>
+  <g clip-path="url(#plate)">
+    <g transform="translate(${x} ${y}) scale(${scale})">
+      ${artworkInner()}
+    </g>
+  </g>
+</svg>
+`;
+}
+
 function buildMacSvg(imageHref) {
   const path = superellipsePath(macPlate);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
@@ -48,6 +72,15 @@ function buildWindowsSvg(imageHref) {
   <image href="${imageHref}" x="${windowsPlate.x}" y="${windowsPlate.y}" width="${windowsPlate.size}" height="${windowsPlate.size}" preserveAspectRatio="xMidYMid slice" clip-path="url(#plate)"/>
 </svg>
 `;
+}
+
+function buildMacVectorSvg() {
+  return composeVectorSvg(`<path d="${superellipsePath(macPlate)}"/>`, macPlate);
+}
+
+function buildWindowsVectorSvg() {
+  const { x, y, size, radius } = windowsPlate;
+  return composeVectorSvg(`<rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${radius}"/>`, windowsPlate);
 }
 
 function runTauriIcon(input, output, pngSize) {
@@ -74,8 +107,10 @@ mkdirSync(brandDir, { recursive: true });
 mkdirSync(tauriIconsDir, { recursive: true });
 mkdirSync(publicDir, { recursive: true });
 
-writeFileSync(join(brandDir, "app-icon.svg"), buildMacSvg("app-icon-artwork.png"));
-writeFileSync(join(brandDir, "app-icon-windows.svg"), buildWindowsSvg("app-icon-artwork.png"));
+// Standalone vectors derived from app-icon-artwork.svg (no raster <image> href).
+writeFileSync(join(brandDir, "app-icon.svg"), buildMacVectorSvg());
+writeFileSync(join(brandDir, "app-icon-windows.svg"), buildWindowsVectorSvg());
+writeFileSync(join(publicDir, "favicon.svg"), buildMacVectorSvg());
 
 const tempRoot = mkdtempSync(join(tmpdir(), "xiaobai-switch-icons-"));
 const macSvg = join(tempRoot, "macos.svg");
