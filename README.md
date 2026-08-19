@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/brand/app-icon.svg" alt="XiaoBaiSwitch" width="160" height="160">
+  <img src="assets/brand/app-icon-1024.png" alt="XiaoBaiSwitch" width="160" height="160">
 </p>
 
 # Xiaobai Switch
