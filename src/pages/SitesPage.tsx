@@ -286,7 +286,7 @@ export function SitesPage() {
         <div className="flex items-center justify-between p-3">
           <span className="font-medium">{t("sites.title")}</span>
           <Button
-            type="primary"
+            color="default"
             size="small"
             icon={<Plus size={14} />}
             onClick={openCreateForm}
