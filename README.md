@@ -2,7 +2,7 @@
   <img src="assets/brand/app-icon-1024.png" alt="XiaoBaiSwitch" width="160" height="160">
 </p>
 
-# Xiaobai Switch
+# XiaoBaiSwitch
 
 小白也能上手的，以站点驱动的 Claude Code / Codex 上游配置桌面应用。
 

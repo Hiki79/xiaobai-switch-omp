@@ -138,7 +138,7 @@ jobs:
           $releaseDir = Join-Path "src-tauri/target/${{ matrix.target }}" "release"
           Write-Host "PWD=$(Get-Location) releaseDir=$releaseDir"
           $exe = $null
-          foreach ($name in @("xiaobai-switch.exe", "XiaoBaiSwitch.exe")) {
+          foreach ($name in @("XiaoBaiSwitch.exe", "xiaobai-switch.exe")) {
             $candidate = Join-Path $releaseDir $name
             if (Test-Path -LiteralPath $candidate) {
               $exe = $candidate

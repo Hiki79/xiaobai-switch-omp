@@ -102,10 +102,10 @@ describe("shipped GitHub workflows", () => {
     const release = readRepoFile(".github/workflows/release.yml");
     // `Join-Path $dir "a.exe", Join-Path $dir "b.exe"` is one call, not two paths.
     expect(release).not.toMatch(
-      /Join-Path \$releaseDir ["']xiaobai-switch\.exe["'],/,
+      /Join-Path \$releaseDir ["'](?:xiaobai-switch|XiaoBaiSwitch)\.exe["'],/,
     );
     expect(release).toMatch(
-      /foreach \(\$name in @\(["']xiaobai-switch\.exe["']/,
+      /foreach \(\$name in @\(["']XiaoBaiSwitch\.exe["']/,
     );
   });
 });

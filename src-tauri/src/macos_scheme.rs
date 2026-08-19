@@ -45,7 +45,7 @@ pub fn install_dev_url_handler() -> AppResult<PathBuf> {
 end open location
 "#;
 
-    let tmp = std::env::temp_dir().join("xiaobai-switch-url-handler.applescript");
+    let tmp = std::env::temp_dir().join("XiaoBaiSwitch-Dev-url-handler.applescript");
     fs::write(&tmp, script)?;
 
     if dest.exists() {
@@ -118,6 +118,7 @@ fn patch_handler_info_plist(info: &PathBuf) -> AppResult<()> {
         false,
     );
     let _ = run("Set :CFBundleName XiaoBaiSwitch Dev", false);
+    let _ = run("Add :CFBundleName string XiaoBaiSwitch Dev", false);
     let _ = run("Set :CFBundleDisplayName XiaoBaiSwitch Dev", false);
     let _ = run("Add :CFBundleDisplayName string XiaoBaiSwitch Dev", false);
     Ok(())
