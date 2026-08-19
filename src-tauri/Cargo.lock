@@ -6348,7 +6348,7 @@ dependencies = [
 
 [[package]]
 name = "xiaobai-switch"
-version = "0.0.2"
+version = "0.0.4"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
