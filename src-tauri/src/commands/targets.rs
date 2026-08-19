@@ -1,3 +1,4 @@
+use crate::cli_detect;
 use crate::domain::{ApplyStatus, CliToolInfo, TargetKind, TargetLiveStatus};
 use crate::error::{AppError, AppResult};
 use crate::paths::{resolve_claude_home, resolve_codex_home};
@@ -5,7 +6,6 @@ use crate::repo;
 use crate::state::AppState;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use std::process::Command;
 use std::time::{Duration, Instant};
 use tauri::State;
 
@@ -130,57 +130,14 @@ pub(crate) fn detect_cli_tools_cached(force: bool) -> Vec<CliToolInfo> {
         }
     }
     let tools = vec![
-        probe_tool(TargetKind::ClaudeCode, "claude"),
-        probe_tool(TargetKind::Codex, "codex"),
+        cli_detect::probe_tool(TargetKind::ClaudeCode, "claude"),
+        cli_detect::probe_tool(TargetKind::Codex, "codex"),
     ];
     *CLI_PROBE_CACHE.lock() = Some(CliProbeCache {
         tools: tools.clone(),
         at: Instant::now(),
     });
     tools
-}
-
-fn probe_tool(kind: TargetKind, bin: &str) -> CliToolInfo {
-    let output = Command::new(bin).arg("--version").output();
-    match output {
-        Ok(out) if out.status.success() => {
-            let version = String::from_utf8_lossy(&out.stdout)
-                .lines()
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            CliToolInfo {
-                kind,
-                installed: true,
-                version: if version.is_empty() {
-                    None
-                } else {
-                    Some(version)
-                },
-                path: which(bin),
-            }
-        }
-        _ => CliToolInfo {
-            kind,
-            installed: false,
-            version: None,
-            path: which(bin),
-        },
-    }
-}
-
-fn which(bin: &str) -> Option<String> {
-    let cmd = if cfg!(windows) { "where" } else { "which" };
-    let out = Command::new(cmd).arg(bin).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .next()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
 }
 
 #[tauri::command]

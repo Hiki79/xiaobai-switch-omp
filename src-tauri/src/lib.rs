@@ -2,6 +2,7 @@ mod adapters;
 mod autostart;
 mod backup;
 mod capabilities;
+mod cli_detect;
 mod commands;
 mod crypto;
 mod db;
