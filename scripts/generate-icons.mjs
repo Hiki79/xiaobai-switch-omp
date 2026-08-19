@@ -63,6 +63,13 @@ function copyFile(source, destination) {
   cpSync(source, destination);
 }
 
+function copyDirectory(source, destination) {
+  mkdirSync(destination, { recursive: true });
+  for (const name of readdirSync(source)) {
+    cpSync(join(source, name), join(destination, name), { recursive: true });
+  }
+}
+
 mkdirSync(brandDir, { recursive: true });
 mkdirSync(tauriIconsDir, { recursive: true });
 mkdirSync(publicDir, { recursive: true });
@@ -75,6 +82,7 @@ const macSvg = join(tempRoot, "macos.svg");
 const windowsSvg = join(tempRoot, "windows.svg");
 const macIcons = join(tempRoot, "macos");
 const windowsIcons = join(tempRoot, "windows");
+const mobileIcons = join(tempRoot, "mobile");
 const macBrand = join(tempRoot, "macos-brand");
 const windowsBrand = join(tempRoot, "windows-brand");
 
@@ -84,6 +92,8 @@ try {
 
   runTauriIcon(macSvg, macIcons);
   runTauriIcon(windowsSvg, windowsIcons);
+  // Mobile platforms apply their own masks, so keep the source artwork full-bleed.
+  runTauriIcon(artworkPath, mobileIcons);
   runTauriIcon(macSvg, macBrand, 1024);
   runTauriIcon(windowsSvg, windowsBrand, 1024);
 
@@ -96,6 +106,9 @@ try {
     copyFile(join(windowsIcons, name), join(tauriIconsDir, name));
   }
 
+  copyDirectory(join(mobileIcons, "ios"), join(tauriIconsDir, "ios"));
+  copyDirectory(join(mobileIcons, "android"), join(tauriIconsDir, "android"));
+
   copyFile(join(macBrand, "1024x1024.png"), join(brandDir, "app-icon-1024.png"));
   copyFile(join(macBrand, "1024x1024.png"), join(brandDir, "app-icon-preview.png"));
   copyFile(join(windowsBrand, "1024x1024.png"), join(brandDir, "app-icon-windows-1024.png"));
@@ -104,4 +117,4 @@ try {
   rmSync(tempRoot, { recursive: true, force: true });
 }
 
-console.log("Generated macOS, Windows, brand, and favicon icon assets.");
+console.log("Generated macOS, Windows, iOS, Android, brand, and favicon icon assets.");
