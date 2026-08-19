@@ -1,0 +1,60 @@
+# git-cliff configuration
+# https://git-cliff.org/docs/configuration
+
+[changelog]
+header = ""
+body = """
+## 更新内容
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message | split(pat="\n") | first | trim }}{% if commit.remote.pr_number %} (#{{ commit.remote.pr_number }}){% endif %} ([`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/Licoy/xiaobai-switch/commit/{{ commit.id }}))
+{%- endfor %}
+{% endfor %}
+{% if previous.version %}
+**Full Changelog**: https://github.com/Licoy/xiaobai-switch/compare/{{ previous.version }}...{{ version }}
+{% endif %}
+"""
+footer = """
+
+<!-- updater-notes-end -->
+
+## 下载
+
+- **macOS（Apple Silicon）**: `.dmg`（aarch64）
+- **macOS（Intel）**: `.dmg`（x86_64）
+- **Windows（x64）**: `.msi` / `.exe`（NSIS）
+- **Windows（ARM64）**: `.exe`（NSIS）
+
+## 安装说明
+
+- macOS 安装包是 **ad-hoc 签名**（无 Apple Developer ID / 公证）。
+- 浏览器下载后，Gatekeeper 可能提示应用 **已损坏**。这是隔离属性，不是文件损坏。**「隐私与安全性」不会出现「仍要打开」**。
+- 把应用复制到「应用程序」后执行 `xattr -cr /Applications/XiaoBaiSwitch.app`，然后右键应用 → 打开。
+- Windows 若缺少 WebView2 系统组件会提示安装（安装包已内嵌引导程序）。
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+split_commits = false
+commit_parsers = [
+  { message = "^feat", group = "🚀 新功能" },
+  { message = "^fix", group = "🐛 Bug 修复" },
+  { message = "^perf", group = "⚡ 性能提升" },
+  { message = "^refactor", group = "🔨 重构" },
+  { message = "^style", group = "🎨 样式" },
+  { message = "^docs", group = "📝 文档" },
+  { message = "^ci", group = "🔧 CI/CD" },
+  { message = "^chore\\(version\\)", skip = true },
+  { message = "^chore", group = "📦 杂项" },
+  { message = "^test", group = "🧪 测试" },
+  { message = "^build", group = "🏗️ 构建" },
+  { body = ".*security", group = "🔒 安全" },
+  { message = "^[Mm]erge", skip = true },
+  { message = ".*", group = "📌 其他" },
+]
+filter_commits = false
+tag_pattern = "v[0-9].*"
+sort_commits = "newest"

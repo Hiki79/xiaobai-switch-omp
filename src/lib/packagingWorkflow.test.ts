@@ -123,8 +123,31 @@ describe("shipped GitHub workflows", () => {
     expect(release).toMatch(/includeUpdaterJson:\s*false/);
     expect(release).toMatch(/scripts\/generate-updater-manifest\.mjs/);
     expect(release).toMatch(/scripts\/validate-updater-signing-secret\.mjs/);
-    expect(release).toMatch(/xattr -cr \/Applications\/XiaoBaiSwitch\.app/);
     expect(release).toMatch(/codesign --verify --deep --strict/);
+  });
+
+  it("generates release notes from git-cliff instead of a static body", () => {
+    const release = readRepoFile(".github/workflows/release.yml");
+    const cliff = readRepoFile("cliff.toml");
+
+    expect(release).toMatch(/^\s+draft-release-notes:\s*$/m);
+    expect(release).toMatch(/orhun\/git-cliff-action@v4/);
+    expect(release).toMatch(/args:\s*--latest --strip header --offline/);
+    expect(release).toMatch(/fetch-depth:\s*0/);
+    expect(release).toMatch(
+      /needs:\s*\[check-version,\s*draft-release-notes\]/,
+    );
+    expect(release).toMatch(
+      /releaseBody:\s*\$\{\{\s*needs\.draft-release-notes\.outputs\.body\s*\}\}/,
+    );
+    expect(release).not.toMatch(/Built from tag/);
+
+    expect(cliff).toMatch(/conventional_commits = true/);
+    expect(cliff).toMatch(/\^feat/);
+    expect(cliff).toMatch(/\^fix/);
+    expect(cliff).toContain("^chore\\\\(version\\\\)");
+    expect(cliff).toMatch(/xattr -cr \/Applications\/XiaoBaiSwitch\.app/);
+    expect(cliff).toMatch(/updater-notes-end/);
   });
 
   it("does not use the PowerShell Join-Path trailing-comma pitfall in the portable zip step", () => {

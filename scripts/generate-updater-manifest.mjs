@@ -21,6 +21,15 @@ const PRIMARY_BUNDLE = {
   "windows-aarch64": "nsis",
 };
 
+export const UPDATER_NOTES_END_MARKER = "<!-- updater-notes-end -->";
+
+/** Keep changelog for in-app notes; drop download / install footer. */
+export function updaterNotesFromReleaseBody(body) {
+  if (!body) return "";
+  const idx = body.indexOf(UPDATER_NOTES_END_MARKER);
+  return (idx === -1 ? body : body.slice(0, idx)).trim();
+}
+
 export function classifySignature(name) {
   const mac = name.match(/_(aarch64|x64)\.app\.tar\.gz\.sig$/);
   if (mac) {
@@ -205,7 +214,7 @@ async function main() {
   const signatures = await downloadSignatures(apiUrl, repository, assets, token);
   const manifest = buildUpdaterManifest({
     version: tag.replace(/^v/, ""),
-    notes: release.body ?? "",
+    notes: updaterNotesFromReleaseBody(release.body ?? ""),
     pubDate: new Date().toISOString(),
     repository,
     serverUrl,

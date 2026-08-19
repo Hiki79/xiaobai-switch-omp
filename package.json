@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
-    "bump": "node scripts/bump-version.mjs"
+    "bump": "node scripts/bump-version.mjs",
+    "changelog": "git-cliff --latest --strip header --offline"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",

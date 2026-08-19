@@ -48,9 +48,42 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: node scripts/validate-updater-signing-secret.mjs
 
+  draft-release-notes:
+    name: Generate Release Notes
+    needs: [check-version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      body: ${{ steps.cliff.outputs.content }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        id: cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header --offline
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "XiaoBaiSwitch ${{ github.ref_name }}"
+          body: ${{ steps.cliff.outputs.content }}
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   release:
     name: Build (${{ matrix.target }})
-    needs: [check-version]
+    needs: [check-version, draft-release-notes]
     strategy:
       fail-fast: false
       matrix:
@@ -120,24 +153,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "XiaoBaiSwitch ${{ github.ref_name }}"
           includeUpdaterJson: false
-          releaseBody: |
-            ## XiaoBaiSwitch ${{ github.ref_name }}
-
-            ### Downloads
-            - **macOS (Apple Silicon)**: `.dmg` (aarch64)
-            - **macOS (Intel)**: `.dmg` (x86_64)
-            - **Windows (x64)**: `.msi` / `.exe` (NSIS)
-            - **Windows (ARM64)**: `.exe` (NSIS)
-
-            ### Notes
-            - macOS builds are **ad-hoc signed** (no Apple Developer ID / notarization).
-            - A browser download can make Gatekeeper say the app is **damaged**. That is the quarantine flag, not a broken file. **Privacy & Security will not show Open Anyway** for this dialog.
-            - Copy the app to Applications, then run:
-              `xattr -cr /Applications/XiaoBaiSwitch.app`
-              After that, right-click the app → Open.
-            - Windows may prompt for WebView2 if the system component is missing (bootstrapper is embedded).
-
-            Built from tag `${{ github.ref_name }}`.
+          releaseBody: ${{ needs.draft-release-notes.outputs.body }}
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
@@ -187,7 +203,7 @@ jobs:
 
   publish-release:
     name: Publish Release
-    needs: [release]
+    needs: [release, draft-release-notes]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -203,6 +219,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          name: "XiaoBaiSwitch ${{ github.ref_name }}"
+          body: ${{ needs.draft-release-notes.outputs.body }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           make_latest: ${{ !contains(github.ref_name, '-') }}

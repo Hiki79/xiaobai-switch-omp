@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 const manifestModule =
   // @ts-expect-error The workflow helper is native ESM without TypeScript declarations.
   await import("../../scripts/generate-updater-manifest.mjs");
-const { buildUpdaterManifest, classifySignature } = manifestModule;
+const {
+  buildUpdaterManifest,
+  classifySignature,
+  updaterNotesFromReleaseBody,
+} = manifestModule;
 
 function assetPair(name: string, id: number) {
   return [
@@ -25,6 +29,31 @@ const signatures = new Map(
     .filter(({ name }) => name.endsWith(".sig"))
     .map(({ name }) => [name, `signature:${name}`]),
 );
+
+describe("updater notes from release body", () => {
+  it("keeps changelog and drops the install footer after the marker", () => {
+    expect(
+      updaterNotesFromReleaseBody(`## 更新内容
+
+### 🐛 Bug 修复
+- **updater**: 检测更新走应用代理规则
+
+<!-- updater-notes-end -->
+
+## 下载
+- **macOS（Apple Silicon）**: \`.dmg\`
+`),
+    ).toBe(`## 更新内容
+
+### 🐛 Bug 修复
+- **updater**: 检测更新走应用代理规则`);
+  });
+
+  it("returns the whole body when the marker is missing", () => {
+    expect(updaterNotesFromReleaseBody("just notes")).toBe("just notes");
+    expect(updaterNotesFromReleaseBody("")).toBe("");
+  });
+});
 
 describe("updater manifest generation", () => {
   it("classifies supported updater signature assets", () => {
