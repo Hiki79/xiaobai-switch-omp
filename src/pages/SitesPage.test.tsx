@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetBrowserMock, seedTargetStatuses } from "@/lib/browserMock";
 import { useApplyStore, useSiteStore, useUIStore } from "@/stores";
+import { resetQuotaInflight } from "@/stores/siteStore";
 import type { TargetLiveStatus } from "@/types/domain";
 import { SitesPage } from "./SitesPage";
 import "@/i18n";
@@ -34,10 +35,14 @@ async function seedSite() {
 describe("SitesPage", () => {
   beforeEach(() => {
     resetBrowserMock();
+    resetQuotaInflight();
     useSiteStore.setState({
       sites: [],
       modelsBySite: {},
       modelsLoadingBySite: {},
+      quotaBySite: {},
+      quotaCacheKeyBySite: {},
+      quotaLoadingBySite: {},
       loading: false,
       hydrated: false,
       fetchingModels: false,
@@ -656,6 +661,52 @@ describe("SitesPage", () => {
       expect(useSiteStore.getState().sites[0]?.enabled).toBe(false);
     });
     expect(useApplyStore.getState().statuses.every((s) => s.status === "not_applied")).toBe(true);
+  });
+
+  it("shows quota in site details when the probe returns a balance", async () => {
+    await act(async () => {
+      await seedSite();
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("site-quota-row")).toBeInTheDocument();
+    });
+    expect(screen.getByText("剩余 $87.50")).toBeInTheDocument();
+    expect(document.querySelector(".ant-card")).toBeNull();
+  });
+
+  it("hides quota when the upstream does not implement billing", async () => {
+    await act(async () => {
+      const site = await useSiteStore.getState().createSite({
+        name: "No Quota",
+        baseUrl: "https://no-quota.example.com",
+        apiKey: "sk-test",
+      });
+      await useSiteStore.getState().fetchModels(site.id);
+      useUIStore.getState().setSelectedSiteId(site.id);
+    });
+
+    render(
+      <Wrapper>
+        <SitesPage />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(modelTag("gpt-4.1")).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(useSiteStore.getState().quotaBySite[useUIStore.getState().selectedSiteId ?? ""]?.status).toBe(
+        "unsupported",
+      );
+    });
+    expect(screen.queryByTestId("site-quota-row")).toBeNull();
   });
 });
 

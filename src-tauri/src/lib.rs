@@ -16,6 +16,7 @@ mod macos_scheme;
 mod model_probe;
 mod models_fetch;
 mod paths;
+mod quota_probe;
 mod redact;
 mod repo;
 mod route_switch;
@@ -117,6 +118,7 @@ pub fn run() {
             commands::delete_site_model,
             commands::clear_site_models,
             commands::probe_site_model,
+            commands::probe_site_quota,
             commands::list_target_status,
             commands::detect_cli_tools,
             commands::cleanup_orphan_target,

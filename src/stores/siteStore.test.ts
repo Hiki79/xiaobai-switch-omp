@@ -1,14 +1,18 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetBrowserMock } from "@/lib/browserMock";
-import { useSiteStore } from "./siteStore";
+import { resetQuotaInflight, useSiteStore } from "./siteStore";
 
 describe("siteStore fetchModels", () => {
   beforeEach(() => {
     resetBrowserMock();
+    resetQuotaInflight();
     useSiteStore.setState({
       sites: [],
       modelsBySite: {},
       modelsLoadingBySite: {},
+      quotaBySite: {},
+      quotaCacheKeyBySite: {},
+      quotaLoadingBySite: {},
       loading: false,
       hydrated: false,
       fetchingModels: false,
@@ -164,5 +168,23 @@ describe("siteStore fetchModels", () => {
     expect(
       useSiteStore.getState().modelsBySite[site.id]?.some((m) => m.modelId === "gpt-4.1"),
     ).toBe(true);
+  });
+
+  it("caches quota probes until force refresh", async () => {
+    const site = await useSiteStore.getState().createSite({
+      name: "Relay",
+      baseUrl: "https://api.example.com",
+      apiKey: "sk-test",
+    });
+    const first = await useSiteStore.getState().probeQuota(site.id);
+    expect(first.status).toBe("available");
+    expect(first.remainingUsd).toBe(87.5);
+    const cached = await useSiteStore.getState().probeQuota(site.id);
+    expect(cached.fetchedAt).toBe(first.fetchedAt);
+
+    await new Promise((r) => setTimeout(r, 5));
+    const forced = await useSiteStore.getState().probeQuota(site.id, { force: true });
+    expect(forced.status).toBe("available");
+    expect(forced.fetchedAt).toBeGreaterThan(first.fetchedAt);
   });
 });

@@ -18,6 +18,17 @@ A site is one upstream relay: a set of Base URLs plus an API key, then models an
 
 Advanced settings (protocol, notes) are collapsed by default.
 
+## API key quota
+
+Opening a site’s details probes the current route with the stored API key against OpenAI-compatible billing endpoints:
+
+- `GET /v1/dashboard/billing/credit_grants`
+- `GET /v1/dashboard/billing/subscription`
+- `GET /v1/dashboard/billing/usage`
+- `GET /api/usage/token` (New API-style key quota; may be CNY)
+
+The remaining / used / total balance is shown only when the response can be parsed. You can refresh it manually. Official OpenAI or Anthropic user keys usually cannot query a balance; in that case the row is hidden and is not treated as an error.
+
 ## Multiple routes
 
 The first item is the current default. You can probe and switch; see [Route switching](../routes/).

@@ -231,6 +231,30 @@ export interface ModelProbeResult {
   endpoint: string;
 }
 
+export type QuotaProbeStatus = "available" | "unsupported" | "unauthorized" | "error";
+
+export type QuotaSource =
+  | "credit_grants"
+  | "subscription_usage"
+  | "subscription_only"
+  | "usage_only"
+  | "token_usage";
+
+export interface SiteQuota {
+  status: QuotaProbeStatus;
+  remainingUsd: number | null;
+  usedUsd: number | null;
+  totalUsd: number | null;
+  unlimited: boolean;
+  unit?: string | null;
+  expiresAt: number | null;
+  source: QuotaSource | null;
+  endpoint: string | null;
+  fetchedAt: number;
+  latencyMs: number;
+  error: string | null;
+}
+
 export interface HttpBytesResult {
   status: number;
   contentType: string;

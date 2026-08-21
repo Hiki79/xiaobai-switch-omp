@@ -12,6 +12,7 @@ import type {
   HttpBytesResult,
   ModelProbeResult,
   Site,
+  SiteQuota,
   SiteModel,
   SwitchRouteResult,
   TargetKind,
@@ -542,6 +543,42 @@ export async function handleBrowserCommand<T>(
         error: null,
       }));
       return results as T;
+    }
+    case "probe_site_quota": {
+      const siteId = String(args?.siteId ?? "");
+      const site = sites.find((s) => s.id === siteId);
+      if (!site) throw { code: "not_found", message: "Site not found" };
+      if (!site.hasKey || /no-quota/i.test(site.baseUrl) || /no-quota/i.test(site.name)) {
+        const unsupported: SiteQuota = {
+          status: "unsupported",
+          remainingUsd: null,
+          usedUsd: null,
+          totalUsd: null,
+          unlimited: false,
+          expiresAt: null,
+          source: null,
+          endpoint: null,
+          fetchedAt: now(),
+          latencyMs: 4,
+          error: null,
+        };
+        return unsupported as T;
+      }
+      const result: SiteQuota = {
+        status: "available",
+        remainingUsd: 87.5,
+        usedUsd: 12.5,
+        totalUsd: 100,
+        unlimited: false,
+        unit: "USD",
+        expiresAt: Math.floor(Date.UTC(2026, 11, 31) / 1000),
+        source: "credit_grants",
+        endpoint: `${normalizeBaseUrl(site.baseUrl).codexBaseUrl}/dashboard/billing/credit_grants`,
+        fetchedAt: now(),
+        latencyMs: 12,
+        error: null,
+      };
+      return result as T;
     }
     case "probe_site_model": {
       const siteId = args?.siteId as string;

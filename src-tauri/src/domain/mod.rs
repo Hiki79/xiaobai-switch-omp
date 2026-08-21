@@ -202,6 +202,43 @@ pub struct ModelProbeResult {
     pub endpoint: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum QuotaProbeStatus {
+    Available,
+    Unsupported,
+    Unauthorized,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum QuotaSource {
+    CreditGrants,
+    SubscriptionUsage,
+    SubscriptionOnly,
+    UsageOnly,
+    TokenUsage,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SiteQuota {
+    pub status: QuotaProbeStatus,
+    pub remaining_usd: Option<f64>,
+    pub used_usd: Option<f64>,
+    pub total_usd: Option<f64>,
+    pub unlimited: bool,
+    #[serde(default)]
+    pub unit: Option<String>,
+    pub expires_at: Option<i64>,
+    pub source: Option<QuotaSource>,
+    pub endpoint: Option<String>,
+    pub fetched_at: i64,
+    pub latency_ms: u64,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetLiveStatus {

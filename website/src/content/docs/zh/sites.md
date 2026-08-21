@@ -18,6 +18,17 @@ order: 4
 
 高级配置（协议、备注）默认收起。
 
+## API Key 额度
+
+打开站点详情时，会用当前线路和已保存的 API Key 探测上游是否实现 OpenAI 兼容的计费接口：
+
+- `GET /v1/dashboard/billing/credit_grants`
+- `GET /v1/dashboard/billing/subscription`
+- `GET /v1/dashboard/billing/usage`
+- `GET /api/usage/token`（New API / 同类中转的 Key 额度，可能是 CNY）
+
+解析成功才显示剩余 / 已用 / 总额；可手动刷新。官方 OpenAI 或 Anthropic 的用户 Key 通常查不到余额，此时该行会隐藏，不算错误。
+
 ## 多线路
 
 第一项是当前默认线路。可测速、切换；切换行为见 [线路切换](../routes/)。

@@ -12,8 +12,10 @@ import { SiteListItem } from "@/components/sites/SiteListItem";
 import { SiteDetailSkeleton } from "@/components/sites/SiteDetailSkeleton";
 import { EmptyOnboarding } from "@/components/sites/EmptyOnboarding";
 import { SiteRouteSwitcher } from "@/components/sites/SiteRouteSwitcher";
+import { SiteQuotaRow } from "@/components/sites/SiteQuotaRow";
 import type { Site } from "@/types/domain";
 import { isAppError } from "@/lib/invoke";
+import { quotaCacheKey } from "@/lib/quotaProbe";
 import { useDeferredReady } from "@/hooks/useDeferredReady";
 import { targetsAppliedForSite } from "@/components/apply/TargetStatusCard";
 
@@ -33,6 +35,10 @@ export function SitesPage() {
   const loadSites = useSiteStore((s) => s.loadSites);
   const listModels = useSiteStore((s) => s.listModels);
   const fetchModels = useSiteStore((s) => s.fetchModels);
+  const probeQuota = useSiteStore((s) => s.probeQuota);
+  const quotaBySite = useSiteStore((s) => s.quotaBySite);
+  const quotaCacheKeyBySite = useSiteStore((s) => s.quotaCacheKeyBySite);
+  const quotaLoadingBySite = useSiteStore((s) => s.quotaLoadingBySite);
   const setSelectedModel = useSiteStore((s) => s.setSelectedModel);
   const deleteSite = useSiteStore((s) => s.deleteSite);
   const updateSite = useSiteStore((s) => s.updateSite);
@@ -102,6 +108,11 @@ export function SitesPage() {
     });
   }, [selectedSiteId, listModels, setSelectedModel]);
 
+  useEffect(() => {
+    if (!selected?.id || !selected.hasKey) return;
+    void probeQuota(selected.id).catch(() => undefined);
+  }, [selected?.id, selected?.baseUrl, selected?.keyPrefix, selected?.hasKey, probeQuota]);
+
   const handleFetchModels = useCallback(
     async (site: Site) => {
       try {
@@ -116,6 +127,18 @@ export function SitesPage() {
     },
     [fetchModels, setSelectedModel, message, t],
   );
+
+  const handleRefreshQuota = useCallback(async () => {
+    if (!selected) return;
+    try {
+      const result = await probeQuota(selected.id, { force: true });
+      if (result.status !== "available") {
+        message.warning(t("sites.quotaRefreshFailed"));
+      }
+    } catch (e) {
+      message.warning(isAppError(e) ? e.message : t("sites.quotaRefreshFailed"));
+    }
+  }, [selected, probeQuota, message, t]);
 
   const handleSiteSaved = useCallback(
     (site: Site, isCreate: boolean) => {
@@ -392,6 +415,19 @@ export function SitesPage() {
                   <span className="w-28 shrink-0 opacity-50">{t("sites.keyPrefix")}</span>
                   <span>{selected.keyPrefix || "—"}</span>
                 </div>
+                <SiteQuotaRow
+                  quota={
+                    quotaCacheKeyBySite[selected.id] === quotaCacheKey(selected)
+                      ? (quotaBySite[selected.id] ?? null)
+                      : null
+                  }
+                  loading={Boolean(quotaLoadingBySite[selected.id])}
+                  refreshing={
+                    Boolean(quotaLoadingBySite[selected.id]) &&
+                    quotaBySite[selected.id]?.status === "available"
+                  }
+                  onRefresh={() => void handleRefreshQuota()}
+                />
                 <div className="flex gap-2">
                   <span className="w-28 shrink-0 opacity-50">{t("sites.protocol")}</span>
                   <span>{t(protocolLabelKey(selected.protocol))}</span>
