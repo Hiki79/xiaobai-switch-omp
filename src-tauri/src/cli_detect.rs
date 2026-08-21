@@ -257,16 +257,46 @@ fn is_runnable(path: &Path) -> bool {
 }
 
 fn read_version(bin_path: &Path, probe: &ProbeEnv) -> Option<String> {
-    let mut cmd = version_command(bin_path);
-    if let Some(path_value) = child_path(bin_path, probe) {
-        cmd.env("PATH", path_value);
-    }
-    let output = cmd.output().ok()?;
+    let output = run_version_command(bin_path, probe)?;
     let line = first_line(&output.stdout).or_else(|| first_line(&output.stderr))?;
     if output.status.success() || looks_like_version(&line) {
         Some(line)
     } else {
         None
+    }
+}
+
+fn run_version_command(bin_path: &Path, probe: &ProbeEnv) -> Option<std::process::Output> {
+    let mut delay_ms = 5u64;
+    for attempt in 0..8 {
+        let mut cmd = version_command(bin_path);
+        if let Some(path_value) = child_path(bin_path, probe) {
+            cmd.env("PATH", path_value);
+        }
+        match cmd.output() {
+            Ok(output) => return Some(output),
+            // Linux ETXTBSY: the inode still has a writer (freshly written test shim).
+            Err(err) if is_text_file_busy(&err) && attempt < 7 => {
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                delay_ms = delay_ms.saturating_mul(2);
+            }
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
+fn is_text_file_busy(err: &std::io::Error) -> bool {
+    if err.kind() == std::io::ErrorKind::ExecutableFileBusy {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        err.raw_os_error() == Some(26)
+    }
+    #[cfg(not(unix))]
+    {
+        false
     }
 }
 
@@ -346,20 +376,28 @@ mod tests {
             for line in win_body.lines() {
                 writeln!(f, "{line}").unwrap();
             }
+            f.sync_all().unwrap();
             path
         }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+            // Close + chmod a sibling, then rename. Exec'ing an inode that is
+            // still open for write fails with ETXTBSY on Linux (flaky CI).
             let path = dir.join(name);
-            let mut f = fs::File::create(&path).unwrap();
-            writeln!(f, "#!/bin/sh").unwrap();
-            for line in unix_body.lines() {
-                writeln!(f, "{line}").unwrap();
+            let tmp = dir.join(format!(".{name}.writing"));
+            {
+                let mut f = fs::File::create(&tmp).unwrap();
+                writeln!(f, "#!/bin/sh").unwrap();
+                for line in unix_body.lines() {
+                    writeln!(f, "{line}").unwrap();
+                }
+                f.sync_all().unwrap();
             }
-            let mut perms = fs::metadata(&path).unwrap().permissions();
+            let mut perms = fs::metadata(&tmp).unwrap().permissions();
             perms.set_mode(0o755);
-            fs::set_permissions(&path, perms).unwrap();
+            fs::set_permissions(&tmp, perms).unwrap();
+            fs::rename(&tmp, &path).unwrap();
             let _ = win_body;
             path
         }
@@ -544,6 +582,16 @@ mod tests {
         assert_eq!(info.version.as_deref(), Some("2.1.197 (Claude Code)"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn text_file_busy_detects_etxtbsy() {
+        let err = std::io::Error::from_raw_os_error(26);
+        assert!(is_text_file_busy(&err));
+        assert!(!is_text_file_busy(&std::io::Error::from(
+            std::io::ErrorKind::NotFound
+        )));
+    }
+
     #[test]
     fn probe_reads_version_from_stdout() {
         let dir = tempfile::tempdir().unwrap();
@@ -562,7 +610,13 @@ mod tests {
             },
         );
         assert!(info.installed);
-        assert_eq!(info.version.as_deref(), Some("2.1.212 (Claude Code)"));
+        assert_eq!(
+            info.version.as_deref(),
+            Some("2.1.212 (Claude Code)"),
+            "path={:?} installed={}",
+            info.path,
+            info.installed
+        );
     }
 
     #[test]
