@@ -8,6 +8,10 @@ import {
   type SiteDeepLinkPayload,
 } from "@/lib/siteDeepLink";
 import {
+  consumeStartupDeepLinkUrls,
+  rememberHandledDeepLink,
+} from "@/lib/deepLinkSession";
+import {
   anyCodexCapabilityOn,
   summarizeCodexCapabilities,
   codexFlagsFromCapabilities,
@@ -198,6 +202,7 @@ export function useSiteDeepLink({ modal, message }: { modal: ModalLike; message:
       if (disposed) return;
       for (const raw of urls ?? []) {
         if (!shouldHandle(raw)) continue;
+        rememberHandledDeepLink(raw);
         const payload = parseSiteDeepLink(raw);
         if (!payload) {
           if (raw.startsWith("xiaobaiswitch:")) {
@@ -223,7 +228,8 @@ export function useSiteDeepLink({ modal, message }: { modal: ModalLike; message:
       try {
         const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
         const pending = await invoke<string | null>("take_pending_deep_link");
-        handleUrls([...(await getCurrent() ?? []), ...(pending ? [pending] : [])]);
+        const startup = consumeStartupDeepLinkUrls((await getCurrent()) ?? []);
+        handleUrls([...(pending ? [pending] : []), ...startup]);
         const stopPlugin = await onOpenUrl((urls) => {
           void invoke("restore_main_window").catch(() => undefined);
           handleUrls(urls);
