@@ -4,7 +4,7 @@ export type SiteProtocol = "openai_compatible" | "anthropic";
 /** Only affects Claude Code auth env key name. Codex ignores this. */
 export type ClaudeAuthKeyStyle = "anthropic_auth_token" | "anthropic_api_key";
 
-export type TargetKind = "claude_code" | "codex" | "omp";
+export type TargetKind = "claude_code" | "codex" | "omp" | "zcode";
 
 export type ProxyMode = "system" | "none" | "custom";
 export type ProxyProtocol = "http" | "https" | "socks5";
@@ -139,6 +139,9 @@ export type ClaudeEffortLevel = "low" | "medium" | "high" | "max";
 /** Codex reasoning effort in config.toml */
 export type CodexReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 
+/** ZCode reasoning variants are model-defined strings (for example low/high/max). */
+export type ZcodeReasoningLevel = string;
+
 export interface ApplyRequest {
   siteId: string;
   targets: TargetKind[];
@@ -166,6 +169,9 @@ export interface ApplyRequest {
   codexCapabilitySource?: CodexCapabilitySource;
   /** Write the site model list into the omp provider entry. */
   ompWriteAllModels?: boolean;
+  /** ZCode model-defined reasoning variants and the selected default variant. */
+  zcodeReasoningLevels?: ZcodeReasoningLevel[] | null;
+  zcodeReasoningLevel?: ZcodeReasoningLevel | null;
 }
 
 export interface ApplyTargetResult {
@@ -194,6 +200,7 @@ export interface AppSettings {
   claudeHomeOverride: string | null;
   codexHomeOverride: string | null;
   ompHomeOverride: string | null;
+  zcodeHomeOverride: string | null;
   codexEnvInjectMode: "auto" | "shell_rc" | "user_env" | "file_only";
   forceExclusiveClaudeAuthKey: boolean;
   autoCheckUpdate: boolean;

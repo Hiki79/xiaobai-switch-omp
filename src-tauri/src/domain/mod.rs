@@ -64,6 +64,7 @@ pub enum TargetKind {
     ClaudeCode,
     Codex,
     Omp,
+    Zcode,
 }
 
 impl TargetKind {
@@ -72,6 +73,7 @@ impl TargetKind {
             Self::ClaudeCode => "claude_code",
             Self::Codex => "codex",
             Self::Omp => "omp",
+            Self::Zcode => "zcode",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
@@ -79,6 +81,7 @@ impl TargetKind {
             "claude_code" => Some(Self::ClaudeCode),
             "codex" => Some(Self::Codex),
             "omp" => Some(Self::Omp),
+            "zcode" => Some(Self::Zcode),
             _ => None,
         }
     }
@@ -376,6 +379,15 @@ pub struct OmpApplyOptions {
     pub catalog_models: Vec<(String, String)>,
 }
 
+/// Extra options for ZCode apply. ZCode stores the available reasoning
+/// variants next to each model, so the list must travel with the selected
+/// default instead of being a single global enum.
+#[derive(Debug, Clone, Default)]
+pub struct ZcodeApplyOptions {
+    pub reasoning_levels: Vec<String>,
+    pub reasoning_level: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyTargetResult {
@@ -409,6 +421,8 @@ pub struct AppSettings {
     pub codex_home_override: Option<String>,
     #[serde(default)]
     pub omp_home_override: Option<String>,
+    #[serde(default)]
+    pub zcode_home_override: Option<String>,
     pub codex_env_inject_mode: String,
     pub force_exclusive_claude_auth_key: bool,
     #[serde(default = "default_true")]
@@ -497,6 +511,7 @@ impl Default for AppSettings {
             claude_home_override: None,
             codex_home_override: None,
             omp_home_override: None,
+            zcode_home_override: None,
             codex_env_inject_mode: "auto".into(),
             force_exclusive_claude_auth_key: false,
             auto_check_update: true,

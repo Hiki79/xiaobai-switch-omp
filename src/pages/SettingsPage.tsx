@@ -290,18 +290,26 @@ function PathsSection() {
   const [claude, setClaude] = useState(settings.claudeHomeOverride ?? "");
   const [codex, setCodex] = useState(settings.codexHomeOverride ?? "");
   const [omp, setOmp] = useState(settings.ompHomeOverride ?? "");
+  const [zcode, setZcode] = useState(settings.zcodeHomeOverride ?? "");
 
   useEffect(() => {
     setClaude(settings.claudeHomeOverride ?? "");
     setCodex(settings.codexHomeOverride ?? "");
     setOmp(settings.ompHomeOverride ?? "");
-  }, [settings.claudeHomeOverride, settings.codexHomeOverride, settings.ompHomeOverride]);
+    setZcode(settings.zcodeHomeOverride ?? "");
+  }, [
+    settings.claudeHomeOverride,
+    settings.codexHomeOverride,
+    settings.ompHomeOverride,
+    settings.zcodeHomeOverride,
+  ]);
 
   const onSave = async () => {
     await saveSettings({
       claudeHomeOverride: claude.trim() || null,
       codexHomeOverride: codex.trim() || null,
       ompHomeOverride: omp.trim() || null,
+      zcodeHomeOverride: zcode.trim() || null,
     });
     message.success(t("settings.pathsSaved"));
   };
@@ -330,6 +338,14 @@ function PathsSection() {
           <Input
             value={omp}
             onChange={(e) => setOmp(e.target.value)}
+            placeholder={t("settings.pathPlaceholder")}
+          />
+        </div>
+        <div className="mb-3">
+          <div className="mb-1 text-sm">{t("settings.zcodeHome")}</div>
+          <Input
+            value={zcode}
+            onChange={(e) => setZcode(e.target.value)}
             placeholder={t("settings.pathPlaceholder")}
           />
         </div>
@@ -551,6 +567,7 @@ function AboutSection() {
             <li>{paths.codexEnvPath}</li>
             <li>~/.claude/settings.json</li>
             <li>~/.codex/config.toml</li>
+            <li>~/.zcode/v2/config.json</li>
           </ul>
           <Button className="mt-3" onClick={() => void invoke("open_path", { path: paths.appDir })}>
             {t("settings.openAppDir")}

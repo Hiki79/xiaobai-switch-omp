@@ -11,6 +11,7 @@ const DEFAULT: AppSettings = {
   claudeHomeOverride: null,
   codexHomeOverride: null,
   ompHomeOverride: null,
+  zcodeHomeOverride: null,
   codexEnvInjectMode: "auto",
   forceExclusiveClaudeAuthKey: false,
   autoCheckUpdate: true,

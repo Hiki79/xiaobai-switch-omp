@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { Site, TargetLiveStatus } from "@/types/domain";
+import type { Site, SiteModel, TargetLiveStatus } from "@/types/domain";
 import {
   buildModelOptions,
   hydrateClaudeForm,
   hydrateCodexForm,
+  hydrateZcodeForm,
   pickApplySiteId,
   selectableApplySites,
+  zcodeReasoningLevelsForModel,
 } from "./hydrateApplyForm";
 
 function site(partial: Partial<Site> & Pick<Site, "id">): Site {
@@ -292,5 +294,56 @@ describe("buildModelOptions", () => {
     );
     expect(opts[0]).toEqual({ value: "codex-auto-review", label: "codex-auto-review" });
     expect(opts).toHaveLength(2);
+  });
+});
+
+describe("hydrateZcodeForm", () => {
+  it("uses the selected model's live variants and default", () => {
+    const defaults = hydrateZcodeForm(
+      site({ id: "shuai", selectedModelId: "glm-5.3" }),
+      status({
+        kind: "zcode",
+        appliedSiteId: "shuai",
+        liveSummary: {
+          model: "xiaobai-shuai/glm-5.3",
+          reasoning_variants: "low,high,max",
+          reasoning_default: "high",
+        },
+      }),
+    );
+    expect(defaults.modelId).toBe("glm-5.3");
+    expect(defaults.reasoningLevels).toEqual(["low", "high", "max"]);
+    expect(defaults.reasoningLevel).toBe("high");
+  });
+
+  it("reads a different model's configured variants before using heuristics", () => {
+    const live = status({
+      kind: "zcode",
+      appliedSiteId: "shuai",
+      liveSummary: {
+        model: "xiaobai-shuai/glm-5.3",
+        reasoning_variants: "low,high,max",
+        reasoning_variants_by_model: JSON.stringify({
+          "custom-model": { variants: ["fast", "deep"], defaultVariant: "deep" },
+        }),
+      },
+    });
+    expect(zcodeReasoningLevelsForModel("custom-model", undefined, live)).toEqual([
+      "fast",
+      "deep",
+    ]);
+  });
+
+  it("uses model metadata and family defaults for new models", () => {
+    const model: SiteModel = {
+      id: "1",
+      siteId: "shuai",
+      modelId: "vendor-model",
+      displayName: "Vendor",
+      ownedBy: null,
+      raw: { reasoning: { variants: ["quick", "thorough"] } },
+    };
+    expect(zcodeReasoningLevelsForModel("vendor-model", model)).toEqual(["quick", "thorough"]);
+    expect(zcodeReasoningLevelsForModel("glm-5.3")).toEqual(["low", "max", "high"]);
   });
 });

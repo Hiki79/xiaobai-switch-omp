@@ -173,12 +173,55 @@ pub struct OmpHydration {
     pub write_all_models: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZcodeHydration {
+    pub model_id: Option<String>,
+    pub reasoning_levels: Vec<String>,
+    pub reasoning_level: Option<String>,
+}
+
+pub fn hydrate_zcode(site: &SiteRow, status: Option<&TargetLiveStatus>) -> ZcodeHydration {
+    let live = status.map(|s| &s.live_summary);
+    let on_site = applied_on_site(&site.id, status);
+    let live_model = live
+        .and_then(|s| live_str(s, &["model"]))
+        .and_then(|m| m.split_once('/').map(|(_, model)| model.to_string()).or(Some(m)))
+        .or_else(|| status.and_then(|s| s.applied_model_id.clone()));
+    let levels = if on_site {
+        live.and_then(|s| live_str(s, &["reasoning_variants"]))
+            .map(|v| {
+                v.split(',')
+                    .map(str::trim)
+                    .filter(|x| !x.is_empty())
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    ZcodeHydration {
+        model_id: if on_site {
+            live_model.or_else(|| site.selected_model_id.clone())
+        } else {
+            site.selected_model_id.clone()
+        },
+        reasoning_levels: levels,
+        reasoning_level: if on_site {
+            live.and_then(|s| live_str(s, &["reasoning_default"]))
+        } else {
+            None
+        },
+    }
+}
+
 pub fn pick_tray_targets(
     has_claude_binding: bool,
     has_codex_binding: bool,
     has_omp_binding: bool,
+    has_zcode_binding: bool,
 ) -> Vec<TargetKind> {
-    if !has_claude_binding && !has_codex_binding && !has_omp_binding {
+    if !has_claude_binding && !has_codex_binding && !has_omp_binding && !has_zcode_binding {
         return vec![TargetKind::ClaudeCode, TargetKind::Codex];
     }
     let mut out = Vec::new();
@@ -190,6 +233,9 @@ pub fn pick_tray_targets(
     }
     if has_omp_binding {
         out.push(TargetKind::Omp);
+    }
+    if has_zcode_binding {
+        out.push(TargetKind::Zcode);
     }
     out
 }
@@ -251,7 +297,8 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
     let has_claude = bindings.iter().any(|b| b.target == TargetKind::ClaudeCode);
     let has_codex = bindings.iter().any(|b| b.target == TargetKind::Codex);
     let has_omp = bindings.iter().any(|b| b.target == TargetKind::Omp);
-    let targets = pick_tray_targets(has_claude, has_codex, has_omp);
+    let has_zcode = bindings.iter().any(|b| b.target == TargetKind::Zcode);
+    let targets = pick_tray_targets(has_claude, has_codex, has_omp, has_zcode);
 
     let mut results = Vec::new();
     let mut attempted = false;
@@ -275,6 +322,8 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     h.sonnet_model,
                     h.haiku_model,
                     h.effort.map(|e| e.as_str().into()),
+                    None,
+                    None,
                     None,
                     None,
                     None,
@@ -311,6 +360,8 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     Some(h.web_search),
                     Some(h.capability_source.as_str().into()),
                     None,
+                    None,
+                    None,
                 )?;
                 results.extend(applied.results);
             }
@@ -339,6 +390,38 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     None,
                     Some(h.write_all_models),
+                    None,
+                    None,
+                )?;
+                results.extend(applied.results);
+            }
+            TargetKind::Zcode => {
+                let h = hydrate_zcode(&site, status);
+                let Some(model_id) = h.model_id.filter(|s| !s.trim().is_empty()) else {
+                    continue;
+                };
+                attempted = true;
+                let applied = crate::commands::apply::apply_site(
+                    app.clone(),
+                    app.state::<AppState>(),
+                    site.id.clone(),
+                    vec![TargetKind::Zcode],
+                    model_id,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(h.reasoning_levels),
+                    h.reasoning_level,
                 )?;
                 results.extend(applied.results);
             }
@@ -598,18 +681,18 @@ mod tests {
     #[test]
     fn pick_targets_defaults_to_both_when_unbound() {
         assert_eq!(
-            pick_tray_targets(false, false, false),
+            pick_tray_targets(false, false, false, false),
             vec![TargetKind::ClaudeCode, TargetKind::Codex]
         );
-        assert_eq!(pick_tray_targets(true, false, false), vec![TargetKind::ClaudeCode]);
-        assert_eq!(pick_tray_targets(false, true, false), vec![TargetKind::Codex]);
+        assert_eq!(pick_tray_targets(true, false, false, false), vec![TargetKind::ClaudeCode]);
+        assert_eq!(pick_tray_targets(false, true, false, false), vec![TargetKind::Codex]);
         assert_eq!(
-            pick_tray_targets(false, false, true),
+            pick_tray_targets(false, false, true, false),
             vec![TargetKind::Omp]
         );
         assert_eq!(
-            pick_tray_targets(true, true, true),
-            vec![TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp]
+            pick_tray_targets(true, true, true, true),
+            vec![TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp, TargetKind::Zcode]
         );
     }
 

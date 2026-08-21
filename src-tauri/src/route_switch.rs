@@ -66,6 +66,12 @@ pub fn sync_applied_urls(state: &AppState, site: &SiteRow) -> AppResult<Vec<Appl
                 settings.omp_home_override.as_deref(),
                 &backup_root,
             ),
+            TargetKind::Zcode => crate::adapters::zcode::rewrite_base_url(
+                site,
+                &binding,
+                settings.zcode_home_override.as_deref(),
+                &backup_root,
+            ),
         };
 
         match rewrite {

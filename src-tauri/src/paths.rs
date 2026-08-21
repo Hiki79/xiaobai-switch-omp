@@ -69,6 +69,10 @@ pub fn default_omp_home() -> AppResult<PathBuf> {
     Ok(home_dir()?.join(".omp").join("agent"))
 }
 
+pub fn default_zcode_home() -> AppResult<PathBuf> {
+    Ok(home_dir()?.join(".zcode").join("v2"))
+}
+
 pub fn resolve_claude_home(override_path: Option<&str>) -> AppResult<PathBuf> {
     if let Some(p) = override_path {
         if !p.trim().is_empty() {
@@ -94,6 +98,15 @@ pub fn resolve_omp_home(override_path: Option<&str>) -> AppResult<PathBuf> {
         }
     }
     default_omp_home()
+}
+
+pub fn resolve_zcode_home(override_path: Option<&str>) -> AppResult<PathBuf> {
+    if let Some(p) = override_path {
+        if !p.trim().is_empty() {
+            return Ok(PathBuf::from(p));
+        }
+    }
+    default_zcode_home()
 }
 
 pub fn app_paths_dto() -> AppResult<AppPaths> {

@@ -26,6 +26,7 @@ pub struct TrayLabels {
     pub claude: &'static str,
     pub codex: &'static str,
     pub omp: &'static str,
+    pub zcode: &'static str,
     pub applied: &'static str,
     pub stale: &'static str,
     pub orphan: &'static str,
@@ -47,6 +48,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             claude: "Claude Code",
             codex: "Codex",
             omp: "omp",
+            zcode: "ZCode",
             applied: "Applied",
             stale: "Stale",
             orphan: "Orphan",
@@ -65,6 +67,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             claude: "Claude Code",
             codex: "Codex",
             omp: "omp",
+            zcode: "ZCode",
             applied: "已应用",
             stale: "已过期",
             orphan: "配置游离",
@@ -92,6 +95,7 @@ fn kind_label(labels: &TrayLabels, kind: TargetKind) -> &'static str {
         TargetKind::ClaudeCode => labels.claude,
         TargetKind::Codex => labels.codex,
         TargetKind::Omp => labels.omp,
+        TargetKind::Zcode => labels.zcode,
     }
 }
 
@@ -132,8 +136,8 @@ pub fn format_model_line(model_id: Option<&str>) -> Option<String> {
     Some(truncate_label(model, TITLE_MAX_CHARS))
 }
 
-pub fn format_tooltip(labels: &TrayLabels, claude: &str, codex: &str, omp: &str) -> String {
-    format!("{}\n{}\n{}\n{}", labels.header, claude, codex, omp)
+pub fn format_tooltip(labels: &TrayLabels, claude: &str, codex: &str, omp: &str, zcode: &str) -> String {
+    format!("{}\n{}\n{}\n{}\n{}", labels.header, claude, codex, omp, zcode)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,6 +180,8 @@ pub struct TraySnapshot {
     pub codex_model: Option<String>,
     pub omp_line: String,
     pub omp_model: Option<String>,
+    pub zcode_line: String,
+    pub zcode_model: Option<String>,
     pub tooltip: String,
     pub sites: Vec<QuickSite>,
 }
@@ -204,6 +210,13 @@ impl TraySnapshot {
             None,
             None,
         );
+        let zcode = format_target_status_line(
+            &labels,
+            TargetKind::Zcode,
+            ApplyStatus::NotApplied,
+            None,
+            None,
+        );
         Self {
             language: language.to_string(),
             claude_line: claude.clone(),
@@ -212,7 +225,9 @@ impl TraySnapshot {
             codex_model: None,
             omp_line: omp.clone(),
             omp_model: None,
-            tooltip: format_tooltip(&labels, &claude, &codex, &omp),
+            zcode_line: zcode.clone(),
+            zcode_model: None,
+            tooltip: format_tooltip(&labels, &claude, &codex, &omp, &zcode),
             sites: vec![],
         }
     }
@@ -289,6 +304,10 @@ fn build_menu(
     if let Some(model) = &snapshot.omp_model {
         append_plain_item(app, &menu, "status_omp_model", model, false)?;
     }
+    append_plain_item(app, &menu, "status_zcode", &snapshot.zcode_line, false)?;
+    if let Some(model) = &snapshot.zcode_model {
+        append_plain_item(app, &menu, "status_zcode_model", model, false)?;
+    }
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     append_native_icon_item(
@@ -354,7 +373,7 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
     // One line + optional model line per target, iterated instead of the old
     // duplicated per-target blocks.
     let mut lines: Vec<(TargetKind, String, Option<String>, String)> = Vec::new();
-    for kind in [TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp] {
+    for kind in [TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp, TargetKind::Zcode] {
         let status = statuses.iter().find(|s| s.kind == kind);
         let line = match status {
             Some(s) => format_target_status_line(
@@ -407,6 +426,8 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
         codex_model: lines[1].2.clone(),
         omp_line: lines[2].1.clone(),
         omp_model: lines[2].2.clone(),
+        zcode_line: lines[3].1.clone(),
+        zcode_model: lines[3].2.clone(),
         tooltip,
         sites: pick_quick_sites(
             &rows,
@@ -621,13 +642,20 @@ mod tests {
     }
 
     #[test]
-    fn tooltip_has_product_and_both_targets() {
+    fn tooltip_has_product_and_all_targets() {
         let labels = tray_labels("zh-CN");
-        let tip = format_tooltip(&labels, "Claude Code · 已应用", "Codex · 未应用", "omp · 未应用");
+        let tip = format_tooltip(
+            &labels,
+            "Claude Code · 已应用",
+            "Codex · 未应用",
+            "omp · 未应用",
+            "ZCode · 未应用",
+        );
         assert!(tip.starts_with("XiaoBaiSwitch"));
         assert!(tip.contains("Claude Code"));
         assert!(tip.contains("Codex"));
-        assert_eq!(tip.lines().count(), 4);
+        assert!(tip.contains("ZCode"));
+        assert_eq!(tip.lines().count(), 5);
     }
 
     #[test]
