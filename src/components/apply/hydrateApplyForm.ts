@@ -193,6 +193,126 @@ export interface OmpFormDefaults {
   writeAllModels: boolean;
 }
 
+export interface ZcodeFormDefaults {
+  modelId: string | undefined;
+  reasoningLevels: string[];
+  reasoningLevel: string | undefined;
+}
+
+const ZCODE_MODEL_LEVELS: Array<{ matches: RegExp; levels: string[] }> = [
+  { matches: /glm[-_ ]?5\.3/i, levels: ["low", "max", "high"] },
+  { matches: /glm[-_ ]?5\.2/i, levels: ["nothink", "high", "max"] },
+  { matches: /(?:gpt|o1|o3)/i, levels: ["low", "medium", "high", "xhigh"] },
+  { matches: /(?:claude|opus|sonnet)/i, levels: ["low", "medium", "high", "xhigh"] },
+  { matches: /kimi/i, levels: ["low", "high", "max"] },
+  { matches: /deepseek/i, levels: ["off", "high", "max"] },
+  { matches: /gemini/i, levels: ["minimal", "low", "medium", "high"] },
+];
+
+function uniqueNonEmpty(values: unknown[]): string[] {
+  const out: string[] = [];
+  for (const raw of values) {
+    if (typeof raw !== "string") continue;
+    const value = raw.trim();
+    if (!value || value.length > 64 || out.includes(value)) continue;
+    out.push(value);
+  }
+  return out;
+}
+
+function rawReasoningLevels(raw: unknown): string[] {
+  if (!raw || typeof raw !== "object") return [];
+  const found: unknown[] = [];
+  const visit = (value: unknown, depth: number) => {
+    if (!value || typeof value !== "object" || depth > 3) return;
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1);
+      return;
+    }
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (
+        [
+          "variants",
+          "levels",
+          "reasoningLevels",
+          "reasoning_levels",
+          "supportedReasoningLevels",
+          "supported_reasoning_levels",
+        ].includes(key)
+      ) {
+        if (Array.isArray(child)) found.push(...child);
+        else if (typeof child === "string") found.push(...child.split(","));
+      }
+      visit(child, depth + 1);
+    }
+  };
+  visit(raw, 0);
+  return uniqueNonEmpty(found);
+}
+
+export function zcodeReasoningLevelsForModel(
+  modelId: string | undefined,
+  model?: SiteModel,
+  status?: TargetLiveStatus,
+): string[] {
+  const liveModel = liveStr(status?.liveSummary, "model")?.split("/").pop();
+  const byModelRaw = liveStr(status?.liveSummary, "reasoning_variants_by_model");
+  if (modelId && byModelRaw) {
+    try {
+      const byModel = JSON.parse(byModelRaw) as Record<string, unknown>;
+      const configured = rawReasoningLevels(byModel[modelId]);
+      if (configured.length > 0) return configured;
+    } catch {
+      // Ignore a malformed summary and fall back to the model catalog/heuristics.
+    }
+  }
+  const live = liveStr(status?.liveSummary, "reasoning_variants");
+  if (!modelId || !liveModel || modelId === liveModel) {
+    const liveLevels = live ? uniqueNonEmpty(live.split(",")) : [];
+    if (liveLevels.length > 0) return liveLevels;
+  }
+
+  const rawLevels = rawReasoningLevels(model?.raw);
+  if (rawLevels.length > 0) return rawLevels;
+
+  const family = ZCODE_MODEL_LEVELS.find((entry) => entry.matches.test(modelId ?? ""));
+  return family?.levels ?? ["low", "medium", "high", "max"];
+}
+
+function preferredZcodeLevel(levels: string[], preferred?: string): string | undefined {
+  if (preferred && levels.includes(preferred)) return preferred;
+  return levels.find((value) => value.toLowerCase() === "max") ?? levels[0];
+}
+
+export function hydrateZcodeForm(
+  site: Site | null,
+  status: TargetLiveStatus | undefined,
+  models: SiteModel[] = [],
+): ZcodeFormDefaults {
+  const live = status?.liveSummary;
+  const onSite = appliedOnSite(site, status);
+  const selector = liveStr(live, "model");
+  const liveModel = selector?.includes("/")
+    ? selector.slice(selector.indexOf("/") + 1)
+    : selector;
+  const modelId = onSite
+    ? (liveModel ?? status?.appliedModelId ?? site?.selectedModelId ?? undefined)
+    : (site?.selectedModelId ?? undefined);
+  const levels = zcodeReasoningLevelsForModel(
+    modelId,
+    models.find((model) => model.modelId === modelId),
+    status,
+  );
+  return {
+    modelId,
+    reasoningLevels: levels,
+    reasoningLevel: preferredZcodeLevel(
+      levels,
+      onSite ? liveStr(live, "reasoning_default") : undefined,
+    ),
+  };
+}
+
 export function hydrateOmpForm(
   site: Site | null,
   status: TargetLiveStatus | undefined,

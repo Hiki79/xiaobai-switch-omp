@@ -35,6 +35,9 @@ concurrency:
 
 env:
   ASTRO_TELEMETRY_DISABLED: "1"
+  # Build the site against the releases owned by this repository. This is
+  # important for forks where the release tag is not present upstream.
+  GITHUB_RELEASE_REPOSITORY: ${{ github.repository }}
 
 jobs:
   build:

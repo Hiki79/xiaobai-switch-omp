@@ -1,7 +1,7 @@
 import { Menu, theme } from "antd";
 import ClaudeCode from "@lobehub/icons/es/ClaudeCode";
 import Codex from "@lobehub/icons/es/Codex";
-import { Pi as PiIcon } from "lucide-react";
+import { Code2, Pi as PiIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { StatusDot } from "@/components/StatusDot";
 import { useApplyStore } from "@/stores";
@@ -9,12 +9,13 @@ import { useUIStore, type ApplyTargetTab } from "@/stores/uiStore";
 import { isConfiguredStatus } from "./TargetStatusCard";
 import { TARGET_LABEL_KEY } from "@/lib/targetMeta";
 
-const TAB_KEYS: ApplyTargetTab[] = ["claude_code", "codex", "omp"];
+const TAB_KEYS: ApplyTargetTab[] = ["claude_code", "codex", "omp", "zcode"];
 
 const MENU_ICONS: Record<ApplyTargetTab, React.ReactNode> = {
   claude_code: <ClaudeCode size={16} />,
   codex: <Codex size={16} />,
   omp: <PiIcon size={16} />,
+  zcode: <Code2 size={16} />,
 };
 
 export function ApplySidebar() {

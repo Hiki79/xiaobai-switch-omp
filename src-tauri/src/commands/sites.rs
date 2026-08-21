@@ -114,6 +114,12 @@ pub fn delete_site(
                         settings.omp_home_override.as_deref(),
                     );
                 }
+                crate::domain::TargetKind::Zcode => {
+                    let _ = crate::adapters::zcode::surgical_revert(
+                        &b,
+                        settings.zcode_home_override.as_deref(),
+                    );
+                }
             }
             state
                 .db

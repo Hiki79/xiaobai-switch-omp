@@ -1288,7 +1288,11 @@ view_image = true
 image_generation = false
 fast_mode = true
 "#,
-                catalog = home.join("xiaobai-model-catalog.json").display()
+                catalog = home
+                    .join("xiaobai-model-catalog.json")
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
             ),
         )
         .unwrap();

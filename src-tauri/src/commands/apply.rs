@@ -6,6 +6,7 @@ use crate::domain::{
     ApplyRecordDto, ApplyResult, ApplyStatus, ApplyTargetResult, BackupInfo, BackupPreview,
     CapabilitySource, ClaudeApplyOptions, ClaudeAuthKeyStyle, ClaudeEffortLevel, CodexApplyOptions,
     CodexReasoningEffort, OmpApplyOptions, SiteRow, TargetBinding, TargetKind, TouchedKeys,
+    ZcodeApplyOptions,
 };
 use crate::error::{AppError, AppResult};
 use crate::lock::try_lock_target;
@@ -135,6 +136,8 @@ pub fn apply_site(
     codex_web_search: Option<bool>,
     codex_capability_source: Option<String>,
     omp_write_all_models: Option<bool>,
+    zcode_reasoning_levels: Option<Vec<String>>,
+    zcode_reasoning_level: Option<String>,
 ) -> AppResult<ApplyResult> {
     if targets.is_empty() {
         return Err(AppError::new("validation_failed", "no targets selected"));
@@ -200,6 +203,11 @@ pub fn apply_site(
     let omp_opts = OmpApplyOptions {
         write_all_models: omp_write_all,
         catalog_models: catalog_models.clone(),
+    };
+
+    let zcode_opts = ZcodeApplyOptions {
+        reasoning_levels: zcode_reasoning_levels.unwrap_or_default(),
+        reasoning_level: non_empty(zcode_reasoning_level),
     };
 
     let codex_opts = CodexApplyOptions {
@@ -346,6 +354,41 @@ pub fn apply_site(
                     )),
                 }
             }
+            TargetKind::Zcode => {
+                match crate::adapters::zcode::apply(
+                    &site,
+                    &api_key,
+                    &model_id,
+                    &zcode_opts,
+                    settings.zcode_home_override.as_deref(),
+                    &backup_root,
+                ) {
+                    Ok(o) => record_success(
+                        &state,
+                        target,
+                        &site,
+                        &model_id,
+                        applied_at,
+                        &backup_root,
+                        &o.binding,
+                        &o.touched,
+                        o.backup_paths,
+                        o.live_summary,
+                        o.message,
+                        o.binding.provider_id.as_deref(),
+                        vec![],
+                    ),
+                    Err(e) => Ok(record_failure(
+                        &state,
+                        target,
+                        &site,
+                        &model_id,
+                        applied_at,
+                        &backup_root,
+                        &e,
+                    )),
+                }
+            }
         };
 
         results.push(outcome?);
@@ -451,6 +494,12 @@ pub fn revert_target(
                 settings.omp_home_override.as_deref(),
             )?;
         }
+        TargetKind::Zcode => {
+            crate::adapters::zcode::surgical_revert(
+                &binding,
+                settings.zcode_home_override.as_deref(),
+            )?;
+        }
     }
     state
         .db
@@ -500,6 +549,11 @@ pub fn restore_official_target(
         }),
         TargetKind::Omp => crate::adapters::omp::restore_official(
             settings.omp_home_override.as_deref(),
+            &backup_root,
+        )
+        .map(|_| ()),
+        TargetKind::Zcode => crate::adapters::zcode::restore_official(
+            settings.zcode_home_override.as_deref(),
             &backup_root,
         )
         .map(|_| ()),
@@ -561,7 +615,7 @@ pub fn list_backups(
     let targets: Vec<TargetKind> = if let Some(t) = target.as_deref().and_then(TargetKind::parse) {
         vec![t]
     } else {
-        vec![TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp]
+        vec![TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp, TargetKind::Zcode]
     };
     backup::list_backups_in(&root, &targets, |dir| {
         state

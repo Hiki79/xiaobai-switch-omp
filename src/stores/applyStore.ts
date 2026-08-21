@@ -105,6 +105,8 @@ export const useApplyStore = create<ApplyState>((set, get) => ({
         codexWebSearch: req.codexWebSearch ?? false,
         codexCapabilitySource: req.codexCapabilitySource ?? "site",
         ompWriteAllModels: req.ompWriteAllModels ?? false,
+        zcodeReasoningLevels: req.zcodeReasoningLevels ?? null,
+        zcodeReasoningLevel: req.zcodeReasoningLevel ?? null,
       });
       set({ lastResult: result });
       await get().loadStatus({ force: true });

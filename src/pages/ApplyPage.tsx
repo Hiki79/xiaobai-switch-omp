@@ -5,6 +5,7 @@ import { ApplyPanelSkeleton } from "@/components/apply/ApplyPanelSkeleton";
 import { ClaudeApplyPanel } from "@/components/apply/ClaudeApplyPanel";
 import { CodexApplyPanel } from "@/components/apply/CodexApplyPanel";
 import { OmpApplyPanel } from "@/components/apply/OmpApplyPanel";
+import { ZcodeApplyPanel } from "@/components/apply/ZcodeApplyPanel";
 import { useDeferredTabContent } from "@/hooks/useDeferredTabContent";
 import { useApplyStore, useSiteStore, useUIStore } from "@/stores";
 
@@ -73,6 +74,18 @@ export function ApplyPage() {
             aria-hidden={applyTab !== "omp"}
           >
             <OmpApplyPanel />
+          </div>
+        )}
+        {mounted.has("zcode") && (
+          <div
+            className="h-full min-h-0"
+            style={{
+              display: applyTab === "zcode" && !showSkeleton ? "flex" : "none",
+              flexDirection: "column",
+            }}
+            aria-hidden={applyTab !== "zcode"}
+          >
+            <ZcodeApplyPanel />
           </div>
         )}
       </div>

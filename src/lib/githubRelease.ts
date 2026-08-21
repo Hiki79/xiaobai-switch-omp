@@ -1,10 +1,25 @@
+const DEFAULT_GITHUB_REPOSITORY = "Licoy/xiaobai-switch";
+
 export const GITHUB_API_LATEST =
-  "https://api.github.com/repos/Licoy/xiaobai-switch/releases/latest";
+  `https://api.github.com/repos/${DEFAULT_GITHUB_REPOSITORY}/releases/latest`;
+
+/**
+ * Use the repository that owns the website build when one is provided. This
+ * keeps forked builds from querying the upstream repository for a tag that
+ * only exists in the fork, while local builds retain the upstream default.
+ */
+export function githubRepositoryName(): string {
+  const configured = process.env.GITHUB_RELEASE_REPOSITORY?.trim();
+  return configured && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(configured)
+    ? configured
+    : DEFAULT_GITHUB_REPOSITORY;
+}
 
 export function githubReleaseApiUrl(tag?: string): string {
   const normalized = tag?.trim().replace(/^refs\/tags\//, "");
-  if (!normalized) return GITHUB_API_LATEST;
-  return `https://api.github.com/repos/Licoy/xiaobai-switch/releases/tags/${encodeURIComponent(normalized)}`;
+  const base = `https://api.github.com/repos/${githubRepositoryName()}/releases`;
+  if (!normalized) return `${base}/latest`;
+  return `${base}/tags/${encodeURIComponent(normalized)}`;
 }
 
 export type AssetKind =

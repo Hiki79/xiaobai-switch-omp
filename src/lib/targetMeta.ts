@@ -6,22 +6,26 @@ export const TARGET_LABEL_KEY: Record<TargetKind, string> = {
   claude_code: "apply.targetClaude",
   codex: "apply.targetCodex",
   omp: "apply.targetOmp",
+  zcode: "apply.targetZcode",
 };
 
 export const RESTORE_OFFICIAL_HINT_KEY: Record<TargetKind, string> = {
   claude_code: "apply.restoreOfficialClaudeHint",
   codex: "apply.restoreOfficialCodexHint",
   omp: "apply.restoreOfficialOmpHint",
+  zcode: "apply.restoreOfficialZcodeHint",
 };
 
 export const RESTORE_OFFICIAL_OK_KEY: Record<TargetKind, string> = {
   claude_code: "apply.restoreOfficialClaudeOk",
   codex: "apply.restoreOfficialCodexOk",
   omp: "apply.restoreOfficialOmpOk",
+  zcode: "apply.restoreOfficialZcodeOk",
 };
 
 export const APPLY_RESULT_OK_KEY: Record<TargetKind, string> = {
   claude_code: "apply.resultClaudeOk",
   codex: "apply.resultCodexOk",
   omp: "apply.resultOmpOk",
+  zcode: "apply.resultZcodeOk",
 };

@@ -28,6 +28,14 @@ describe("githubReleaseApiUrl", () => {
       "https://api.github.com/repos/Licoy/xiaobai-switch/releases/tags/v0.0.6",
     );
   });
+
+  it("uses the repository configured by a forked website build", () => {
+    vi.stubEnv("GITHUB_RELEASE_REPOSITORY", "Hiki79/xiaobai-switch-omp");
+
+    expect(githubReleaseApiUrl("v0.0.6")).toBe(
+      "https://api.github.com/repos/Hiki79/xiaobai-switch-omp/releases/tags/v0.0.6",
+    );
+  });
 });
 
 describe("loadLatestRelease", () => {

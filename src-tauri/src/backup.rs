@@ -82,6 +82,7 @@ pub fn prune_all(max: u32) -> AppResult<usize> {
     n += prune_target_backups(TargetKind::ClaudeCode, max)?;
     n += prune_target_backups(TargetKind::Codex, max)?;
     n += prune_target_backups(TargetKind::Omp, max)?;
+    n += prune_target_backups(TargetKind::Zcode, max)?;
     Ok(n)
 }
 
@@ -185,6 +186,8 @@ pub fn parse_backup_id(id: &str) -> AppResult<(TargetKind, String)> {
         (TargetKind::Codex, rest)
     } else if let Some(rest) = id.strip_prefix("omp-") {
         (TargetKind::Omp, rest)
+    } else if let Some(rest) = id.strip_prefix("zcode-") {
+        (TargetKind::Zcode, rest)
     } else {
         return Err(AppError::new("validation_failed", "invalid backup id"));
     };
@@ -244,6 +247,9 @@ pub fn mapped_dest(
         (TargetKind::Omp, "config.yaml") => Some(crate::adapters::omp::config_path(
             settings.omp_home_override.as_deref(),
         )?),
+        (TargetKind::Zcode, "config.json") => Some(crate::adapters::zcode::config_path(
+            settings.zcode_home_override.as_deref(),
+        )?),
         _ => None,
     })
 }
@@ -257,6 +263,9 @@ fn dest_is_allowed(dest: &Path, settings: &AppSettings) -> bool {
         roots.push(p);
     }
     if let Ok(p) = crate::paths::resolve_omp_home(settings.omp_home_override.as_deref()) {
+        roots.push(p);
+    }
+    if let Ok(p) = crate::paths::resolve_zcode_home(settings.zcode_home_override.as_deref()) {
         roots.push(p);
     }
     if let Ok(p) = crate::paths::app_dir() {
