@@ -3,7 +3,13 @@ name: CI
 on:
   push:
     branches: [main, "feat/**"]
+    paths-ignore:
+      - "website/**"
+      - ".github/workflows/website.yml"
   pull_request:
+    paths-ignore:
+      - "website/**"
+      - ".github/workflows/website.yml"
 
 jobs:
   frontend:
@@ -33,30 +39,3 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - run: cargo test --manifest-path src-tauri/Cargo.toml
-
-  website:
-    runs-on: ubuntu-latest
-    env:
-      ASTRO_TELEMETRY_DISABLED: "1"
-    defaults:
-      run:
-        working-directory: website
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: website/package.json
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: website/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check Pages custom domain
-        run: |
-          test -f dist/CNAME
-          grep -qx 'xiaobaiswitch.com' dist/CNAME
-          test -f dist/.nojekyll

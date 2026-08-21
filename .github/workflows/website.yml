@@ -3,10 +3,14 @@ name: Website
 on:
   push:
     branches: [main]
+    tags:
+      - "v*.*.*"
     paths:
       - "website/**"
-      - "assets/**"
-      - "public/favicon.png"
+      - ".github/workflows/website.yml"
+  pull_request:
+    paths:
+      - "website/**"
       - ".github/workflows/website.yml"
   workflow_dispatch:
 
@@ -16,8 +20,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   ASTRO_TELEMETRY_DISABLED: "1"
@@ -25,6 +29,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: website
@@ -39,6 +44,31 @@ jobs:
           cache: pnpm
           cache-dependency-path: website/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      # Download page bakes GitHub release assets at build time. Tag pushes
+      # race the Release workflow, so wait until the tag is published.
+      - name: Wait for published GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          echo "Waiting for published release ${TAG}"
+          for i in $(seq 1 135); do
+            if json=$(gh release view "$TAG" --json isDraft,assets 2>/dev/null); then
+              draft=$(printf '%s' "$json" | jq -r .isDraft)
+              count=$(printf '%s' "$json" | jq '.assets | length')
+              echo "attempt=${i} draft=${draft} assets=${count}"
+              if [[ "$draft" == "false" && "$count" -gt 0 ]]; then
+                echo "Release ${TAG} is published"
+                exit 0
+              fi
+            else
+              echo "attempt=${i} release not visible yet"
+            fi
+            sleep 20
+          done
+          echo "Timed out waiting for ${TAG}; building with whatever latest is"
       - run: pnpm build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,10 +78,12 @@ jobs:
           grep -qx 'xiaobaiswitch.com' dist/CNAME
           test -f dist/.nojekyll
       - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
         with:
           path: website/dist
 
   deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
     needs: build
     runs-on: ubuntu-latest
     environment:
