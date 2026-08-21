@@ -181,4 +181,14 @@ describe("shipped GitHub workflows", () => {
     );
     expect(release).toMatch(/name:\s*Publish Release/);
   });
+
+  it("bakes download links at build time and does not call GitHub from the browser", () => {
+    const page = readRepoFile("website/src/templates/DownloadPage.astro");
+    const websiteTests = readRepoFile("src/lib/websiteReleases.test.ts");
+
+    expect(page).toMatch(/loadLatestRelease\(process\.env\.GITHUB_TOKEN/);
+    expect(page).not.toMatch(/\bfetch\s*\(/);
+    expect(page).not.toMatch(/GITHUB_API_LATEST/);
+    expect(websiteTests).not.toMatch(/website\/src/);
+  });
 });

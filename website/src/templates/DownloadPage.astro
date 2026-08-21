@@ -109,14 +109,9 @@ const winCards = [
         tag ? (
           <p class="text-sm opacity-70">
             {download.latestVersion}
-            <span data-release-tag class="font-mono">{tag}</span>
+            <span class="font-mono">{tag}</span>
           </p>
-        ) : (
-          <p class="text-sm opacity-70 hidden" data-release-version>
-            {download.latestVersion}
-            <span data-release-tag class="font-mono"></span>
-          </p>
-        )
+        ) : null
       }
     </div>
     <p class="mt-3 text-sm opacity-60">{download.detectHint}</p>
@@ -180,7 +175,6 @@ const winCards = [
                 <a
                   class="btn btn-primary"
                   href={hrefFor(assets, card.primaryKind, fallback)}
-                  data-asset={card.primaryKind}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -214,7 +208,6 @@ const winCards = [
                 <a
                   class="btn btn-primary"
                   href={hrefFor(assets, card.primaryKind, fallback)}
-                  data-asset={card.primaryKind}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -225,7 +218,6 @@ const winCards = [
                   <a
                     class="btn btn-ghost btn-sm"
                     href={hrefFor(assets, extra.kind, fallback)}
-                    data-asset={extra.kind}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -273,8 +265,6 @@ const winCards = [
 </style>
 
 <script>
-  import { GITHUB_API_LATEST, assetsFromRelease } from "../lib/releases";
-
   function syncTabs(root: HTMLElement) {
     const os = root.getAttribute("data-os") === "windows" ? "windows" : "macos";
     root.querySelectorAll<HTMLElement>("[data-os-tab]").forEach((tab) => {
@@ -283,17 +273,6 @@ const winCards = [
       tab.setAttribute("aria-selected", active ? "true" : "false");
       tab.tabIndex = active ? 0 : -1;
     });
-  }
-
-  function applyAssets(root: HTMLElement, map: Record<string, { url: string }>, tag: string) {
-    root.querySelectorAll<HTMLAnchorElement>("[data-asset]").forEach((link) => {
-      const kind = link.getAttribute("data-asset");
-      if (kind && map[kind]?.url) link.href = map[kind].url;
-    });
-    const tagEl = root.querySelector("[data-release-tag]");
-    const versionRow = root.querySelector<HTMLElement>("[data-release-version]");
-    if (tag && tagEl) tagEl.textContent = tag;
-    if (tag && versionRow) versionRow.classList.remove("hidden");
   }
 
   const root = document.querySelector<HTMLElement>("[data-download-root]");
@@ -308,14 +287,5 @@ const winCards = [
         }
       });
     });
-
-    fetch(GITHUB_API_LATEST, { headers: { Accept: "application/vnd.github+json" } })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!data) return;
-        const latest = assetsFromRelease(data);
-        applyAssets(root, latest.assets, latest.tag);
-      })
-      .catch(() => {});
   }
 </script>

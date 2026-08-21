@@ -3,10 +3,11 @@ import {
   GITHUB_API_LATEST,
   githubReleaseApiUrl,
   loadLatestRelease,
-} from "../../website/src/lib/releases";
+} from "./githubRelease";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("githubReleaseApiUrl", () => {
@@ -73,5 +74,18 @@ describe("loadLatestRelease", () => {
     await expect(loadLatestRelease(undefined, "v0.0.6")).rejects.toThrow(
       /draft/i,
     );
+  });
+
+  it("fails CI instead of shipping a download page without installer assets", async () => {
+    vi.stubEnv("CI", "true");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ tag_name: "v0.0.6", draft: false, assets: [] }),
+      }),
+    );
+
+    await expect(loadLatestRelease("token")).rejects.toThrow(/asset/i);
   });
 });
