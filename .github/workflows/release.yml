@@ -30,13 +30,22 @@ jobs:
           PKG_VERSION="v$(jq -r .version package.json)"
           TAURI_VERSION="v$(jq -r .version src-tauri/tauri.conf.json)"
           CARGO_VERSION="v$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -n1)"
+          LOCK_VERSION="v$(awk '
+            $0 == "name = \"xiaobai-switch\"" { found = 1; next }
+            found && $1 == "version" {
+              gsub(/"/, "", $3)
+              print $3
+              exit
+            }
+          ' src-tauri/Cargo.lock)"
 
           echo "tag:          $TAG"
           echo "package.json: $PKG_VERSION"
           echo "tauri.conf:   $TAURI_VERSION"
           echo "Cargo.toml:   $CARGO_VERSION"
+          echo "Cargo.lock:   $LOCK_VERSION"
 
-          if [[ "$TAG" != "$PKG_VERSION" || "$TAG" != "$TAURI_VERSION" || "$TAG" != "$CARGO_VERSION" ]]; then
+          if [[ "$TAG" != "$PKG_VERSION" || "$TAG" != "$TAURI_VERSION" || "$TAG" != "$CARGO_VERSION" || "$TAG" != "$LOCK_VERSION" ]]; then
             echo "Tag and version files are not consistent. Run: pnpm bump ${TAG#v}"
             exit 1
           fi

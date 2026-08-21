@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Bump app version across package.json / tauri.conf.json / Cargo.toml,
- * create an annotated-ready git tag `vX.Y.Z`, optionally push to trigger Release CI.
+ * Bump app version across package.json / tauri.conf.json / Cargo.toml /
+ * Cargo.lock, create tag `vX.Y.Z`, optionally push to trigger Release CI.
  *
  * Usage:
  *   pnpm bump 0.1.1
@@ -35,7 +35,9 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
 
 const jsonFiles = ['package.json', 'src-tauri/tauri.conf.json'];
 const cargoToml = 'src-tauri/Cargo.toml';
-const allFiles = [...jsonFiles, cargoToml];
+const cargoLock = 'src-tauri/Cargo.lock';
+const cargoPackage = 'xiaobai-switch';
+const allFiles = [...jsonFiles, cargoToml, cargoLock];
 const tag = `v${version}`;
 
 function git(args, options = {}) {
@@ -109,17 +111,33 @@ for (const entry of currentVersions) {
 
 console.log(`\n版本检查完成: ${version}`);
 
-if (changed) {
-  git(['add', ...allFiles]);
-
+function syncCargoLock() {
   try {
-    git(['diff', '--cached', '--quiet', '--', ...allFiles], { stdio: 'ignore' });
-    console.log('\n版本文件没有产生 Git diff，跳过 commit。');
+    execFileSync(
+      'cargo',
+      ['update', '--manifest-path', cargoToml, '--offline', '-p', cargoPackage],
+      { cwd: root, stdio: 'inherit' },
+    );
   } catch {
-    git(['commit', '-m', `chore(version): bump version to ${tag}`]);
+    console.error(
+      '无法同步 src-tauri/Cargo.lock。请确认已安装 cargo，并在仓库根目录可执行 cargo update。',
+    );
+    process.exit(1);
   }
-} else {
-  console.log('\n版本文件没有变化，跳过 commit。');
+}
+
+syncCargoLock();
+if (!changed) {
+  console.log('版本文件已是目标版本，仍会检查 Cargo.lock 是否需要提交。');
+}
+
+git(['add', ...allFiles]);
+
+try {
+  git(['diff', '--cached', '--quiet', '--', ...allFiles], { stdio: 'ignore' });
+  console.log('\n版本文件没有产生 Git diff，跳过 commit。');
+} catch {
+  git(['commit', '-m', `chore(version): bump version to ${tag}`]);
 }
 
 if (tagExists) {
