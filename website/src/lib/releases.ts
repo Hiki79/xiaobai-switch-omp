@@ -1,6 +1,12 @@
 export const GITHUB_API_LATEST =
   "https://api.github.com/repos/Licoy/xiaobai-switch/releases/latest";
 
+export function githubReleaseApiUrl(tag?: string): string {
+  const normalized = tag?.trim().replace(/^refs\/tags\//, "");
+  if (!normalized) return GITHUB_API_LATEST;
+  return `https://api.github.com/repos/Licoy/xiaobai-switch/releases/tags/${encodeURIComponent(normalized)}`;
+}
+
 export type AssetKind =
   | "mac-arm"
   | "mac-intel"
@@ -46,17 +52,37 @@ export function hrefFor(assets: AssetMap, kind: AssetKind, fallback: string): st
   return assets[kind]?.url ?? fallback;
 }
 
-export async function loadLatestRelease(token?: string): Promise<LatestRelease | null> {
+type GithubReleasePayload = Parameters<typeof assetsFromRelease>[0] & {
+  draft?: boolean;
+};
+
+export async function loadLatestRelease(
+  token?: string,
+  tag?: string,
+): Promise<LatestRelease | null> {
+  const url = githubReleaseApiUrl(tag);
   try {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
       "User-Agent": "xiaobai-switch-website",
     };
     if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(GITHUB_API_LATEST, { headers });
-    if (!res.ok) return null;
-    return assetsFromRelease((await res.json()) as Parameters<typeof assetsFromRelease>[0]);
-  } catch {
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      if (tag?.trim()) {
+        throw new Error(`Failed to load GitHub release ${tag.trim()}: ${res.status}`);
+      }
+      return null;
+    }
+    const payload = (await res.json()) as GithubReleasePayload;
+    if (payload.draft) {
+      throw new Error(
+        `GitHub release ${payload.tag_name ?? tag ?? "unknown"} is still a draft`,
+      );
+    }
+    return assetsFromRelease(payload);
+  } catch (error) {
+    if (tag?.trim()) throw error;
     return null;
   }
 }

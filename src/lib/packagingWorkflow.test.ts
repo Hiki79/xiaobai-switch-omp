@@ -160,4 +160,25 @@ describe("shipped GitHub workflows", () => {
       /foreach \(\$name in @\(["']XiaoBaiSwitch\.exe["']/,
     );
   });
+
+  it("rebuilds the website after Release publishes, not on the version tag", () => {
+    const website = readRepoFile(".github/workflows/website.yml");
+    const release = readRepoFile(".github/workflows/release.yml");
+
+    // Tag pushes race installer uploads. GITHUB_TOKEN also cannot fire
+    // `on: release` for other workflows, so Website listens to Release
+    // completing instead of polling from a tag job.
+    expect(website).not.toMatch(/tags:\s*\n\s+-\s+"v\*\.\*\.\*"/);
+    expect(website).not.toMatch(/Wait for published GitHub release/);
+    expect(website).toMatch(
+      /workflow_run:\s*\n\s+workflows:\s*\n\s+-\s+Release\s*\n\s+types:\s*\n\s+-\s+completed/,
+    );
+    expect(website).toMatch(/workflow_dispatch:/);
+    expect(website).toMatch(/release_tag:/);
+    expect(website).toMatch(/RELEASE_TAG:/);
+    expect(website).toMatch(
+      /github\.event_name == 'workflow_run' \|\| github\.event_name == 'workflow_dispatch'/,
+    );
+    expect(release).toMatch(/name:\s*Publish Release/);
+  });
 });

@@ -12,7 +12,7 @@ interface Props {
 const { locale } = Astro.props;
 const seo = t(locale, "seo");
 const download = t(locale, "download");
-const latest = await loadLatestRelease(process.env.GITHUB_TOKEN);
+const latest = await loadLatestRelease(process.env.GITHUB_TOKEN, process.env.RELEASE_TAG);
 const assets = latest?.assets ?? {};
 const tag = latest?.tag ?? "";
 const fallback = GITHUB_LATEST_RELEASE_URL;

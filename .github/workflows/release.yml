@@ -210,6 +210,9 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: XiaoBaiSwitch_${{ github.ref_name }}_${{ matrix.platform }}-portable.zip
 
+  # Website.yml rebuilds the download page via workflow_run after this
+  # workflow succeeds. Do not deploy the site from the version tag — assets
+  # are missing until this job publishes the draft.
   publish-release:
     name: Publish Release
     needs: [release, draft-release-notes]
