@@ -104,6 +104,7 @@ export const useApplyStore = create<ApplyState>((set, get) => ({
         codexImageGeneration: req.codexImageGeneration ?? false,
         codexWebSearch: req.codexWebSearch ?? false,
         codexCapabilitySource: req.codexCapabilitySource ?? "site",
+        ompWriteAllModels: req.ompWriteAllModels ?? false,
       });
       set({ lastResult: result });
       await get().loadStatus({ force: true });

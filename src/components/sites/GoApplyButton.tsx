@@ -2,11 +2,28 @@ import { useEffect, useState } from "react";
 import { Button } from "antd";
 import ClaudeCode from "@lobehub/icons/es/ClaudeCode";
 import Codex from "@lobehub/icons/es/Codex";
+import { Pi as PiIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ApplyTargetTab } from "@/stores";
 
 const CYCLE_MS = 3000;
 const FADE_MS = 180;
+
+/** Rotation order for the "go apply" button; omp last so the two original
+ * targets keep their previous rhythm. */
+const CYCLE: ApplyTargetTab[] = ["claude_code", "codex", "omp"];
+
+const TAB_ICONS: Record<ApplyTargetTab, React.ReactNode> = {
+  claude_code: <ClaudeCode size={14} />,
+  codex: <Codex size={14} />,
+  omp: <PiIcon size={14} />,
+};
+
+const GO_APPLY_KEY: Record<ApplyTargetTab, string> = {
+  claude_code: "sites.goApplyClaude",
+  codex: "sites.goApplyCodex",
+  omp: "sites.goApplyOmp",
+};
 
 interface Props {
   disabled?: boolean;
@@ -24,20 +41,20 @@ export function GoApplyButton({ disabled, onApply }: Props) {
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const id = window.setInterval(() => {
       if (reduce) {
-        setTab((cur) => (cur === "claude_code" ? "codex" : "claude_code"));
+        setTab((cur) => CYCLE[(CYCLE.indexOf(cur) + 1) % CYCLE.length]);
         return;
       }
       setLeaving(true);
       window.setTimeout(() => {
-        setTab((cur) => (cur === "claude_code" ? "codex" : "claude_code"));
+        setTab((cur) => CYCLE[(CYCLE.indexOf(cur) + 1) % CYCLE.length]);
         setLeaving(false);
       }, FADE_MS);
     }, CYCLE_MS);
     return () => window.clearInterval(id);
   }, []);
 
-  const label = tab === "claude_code" ? t("sites.goApplyClaude") : t("sites.goApplyCodex");
-  const icon = tab === "claude_code" ? <ClaudeCode size={14} /> : <Codex size={14} />;
+  const label = t(GO_APPLY_KEY[tab]);
+  const icon = TAB_ICONS[tab];
 
   return (
     <Button type="primary" size="small" disabled={disabled} onClick={() => onApply(tab)}>

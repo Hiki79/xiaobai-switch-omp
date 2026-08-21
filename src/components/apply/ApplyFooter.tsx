@@ -3,6 +3,7 @@ import { App, Button, Modal, theme } from "antd";
 import { Check, History, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { isAppError } from "@/lib/invoke";
+import { RESTORE_OFFICIAL_HINT_KEY, RESTORE_OFFICIAL_OK_KEY } from "@/lib/targetMeta";
 import type { TargetKind } from "@/types/domain";
 import { TargetBackupList } from "./TargetBackupList";
 
@@ -26,9 +27,7 @@ export function ApplyFooter({ loading, disabled, target, onApply, onRestoreOffic
       centered: true,
       title: t("apply.restoreOfficialConfirm"),
       content:
-        target === "claude_code"
-          ? t("apply.restoreOfficialClaudeHint")
-          : t("apply.restoreOfficialCodexHint"),
+        t(RESTORE_OFFICIAL_HINT_KEY[target]),
       okText: t("apply.restoreOfficialOk"),
       cancelText: t("common.cancel"),
       okButtonProps: { danger: true, loading: restoring },
@@ -42,9 +41,7 @@ export function ApplyFooter({ loading, disabled, target, onApply, onRestoreOffic
             content: (
               <div>
                 <div>
-                  {target === "claude_code"
-                    ? t("apply.restoreOfficialClaudeOk")
-                    : t("apply.restoreOfficialCodexOk")}
+                  {t(RESTORE_OFFICIAL_OK_KEY[target])}
                 </div>
                 <div className="mt-2">{t("apply.restartHint")}</div>
               </div>

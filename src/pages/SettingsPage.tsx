@@ -289,16 +289,19 @@ function PathsSection() {
   const saveSettings = useSettingsStore((s) => s.saveSettings);
   const [claude, setClaude] = useState(settings.claudeHomeOverride ?? "");
   const [codex, setCodex] = useState(settings.codexHomeOverride ?? "");
+  const [omp, setOmp] = useState(settings.ompHomeOverride ?? "");
 
   useEffect(() => {
     setClaude(settings.claudeHomeOverride ?? "");
     setCodex(settings.codexHomeOverride ?? "");
-  }, [settings.claudeHomeOverride, settings.codexHomeOverride]);
+    setOmp(settings.ompHomeOverride ?? "");
+  }, [settings.claudeHomeOverride, settings.codexHomeOverride, settings.ompHomeOverride]);
 
   const onSave = async () => {
     await saveSettings({
       claudeHomeOverride: claude.trim() || null,
       codexHomeOverride: codex.trim() || null,
+      ompHomeOverride: omp.trim() || null,
     });
     message.success(t("settings.pathsSaved"));
   };
@@ -319,6 +322,14 @@ function PathsSection() {
           <Input
             value={codex}
             onChange={(e) => setCodex(e.target.value)}
+            placeholder={t("settings.pathPlaceholder")}
+          />
+        </div>
+        <div className="mb-3">
+          <div className="mb-1 text-sm">{t("settings.ompHome")}</div>
+          <Input
+            value={omp}
+            onChange={(e) => setOmp(e.target.value)}
             placeholder={t("settings.pathPlaceholder")}
           />
         </div>

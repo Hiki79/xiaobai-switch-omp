@@ -30,6 +30,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   alwaysOnTop: false,
   claudeHomeOverride: null,
   codexHomeOverride: null,
+  ompHomeOverride: null,
   codexEnvInjectMode: "auto",
   forceExclusiveClaudeAuthKey: false,
   autoCheckUpdate: true,
@@ -66,6 +67,21 @@ function defaultTargetStatuses(): TargetLiveStatus[] {
       installed: false,
       version: null,
       configPath: "~/.codex/config.toml",
+      status: "not_applied",
+      appliedSiteId: null,
+      appliedSiteName: null,
+      appliedModelId: null,
+      providerId: null,
+      orphan: false,
+      liveSummary: {},
+      lastAppliedAt: null,
+      staleReason: null,
+    },
+    {
+      kind: "omp",
+      installed: false,
+      version: null,
+      configPath: "~/.omp/agent/models.yml",
       status: "not_applied",
       appliedSiteId: null,
       appliedSiteName: null,
@@ -487,6 +503,7 @@ export async function handleBrowserCommand<T>(
       const tools: CliToolInfo[] = [
         { kind: "claude_code", installed: false, version: null, path: null },
         { kind: "codex", installed: false, version: null, path: null },
+        { kind: "omp", installed: false, version: null, path: null },
       ];
       return tools as T;
     }

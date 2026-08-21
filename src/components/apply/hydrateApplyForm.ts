@@ -188,6 +188,31 @@ export function hydrateCodexForm(
   };
 }
 
+export interface OmpFormDefaults {
+  modelId: string | undefined;
+  writeAllModels: boolean;
+}
+
+export function hydrateOmpForm(
+  site: Site | null,
+  status: TargetLiveStatus | undefined,
+): OmpFormDefaults {
+  const live = status?.liveSummary;
+  const onSite = appliedOnSite(site, status);
+  // omp stores the default as a "<provider>/<model>" selector; keep the id part.
+  const selector = liveStr(live, "default_model");
+  const liveModel = selector?.includes("/")
+    ? selector.slice(selector.indexOf("/") + 1)
+    : (selector ?? undefined);
+  const count = Number(liveStr(live, "models") ?? "1");
+  return {
+    modelId: onSite
+      ? (liveModel ?? site?.selectedModelId ?? undefined)
+      : (site?.selectedModelId ?? undefined),
+    writeAllModels: onSite && Number.isFinite(count) && count > 1,
+  };
+}
+
 export function buildModelOptions(
   models: SiteModel[],
   extraIds: Array<string | undefined>,

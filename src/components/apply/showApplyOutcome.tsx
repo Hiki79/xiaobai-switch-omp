@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { TFunction } from "i18next";
-import type { ApplyTargetResult, TargetKind } from "@/types/domain";
+import type { ApplyTargetResult } from "@/types/domain";
+import { APPLY_RESULT_OK_KEY } from "@/lib/targetMeta";
 import { isAppError } from "@/lib/invoke";
 
 interface ModalApi {
@@ -18,9 +19,6 @@ interface ModalApi {
   }) => void;
 }
 
-export function applyResultBodyKey(target: TargetKind): "apply.resultClaudeOk" | "apply.resultCodexOk" {
-  return target === "claude_code" ? "apply.resultClaudeOk" : "apply.resultCodexOk";
-}
 
 export function showApplyOutcome(
   modal: ModalApi,
@@ -43,7 +41,7 @@ export function showApplyOutcome(
       title: t("apply.success"),
       content: (
         <div>
-          <div>{t(applyResultBodyKey(result.target))}</div>
+          <div>{t(APPLY_RESULT_OK_KEY[result.target])}</div>
           <div className="mt-2">{t("apply.restartHint")}</div>
         </div>
       ),

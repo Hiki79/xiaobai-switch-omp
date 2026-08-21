@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
-import { applyResultBodyKey, showApplyException, showApplyOutcome } from "./showApplyOutcome";
+import { showApplyException, showApplyOutcome } from "./showApplyOutcome";
+import { APPLY_RESULT_OK_KEY } from "@/lib/targetMeta";
 
 function modalApi() {
   return {
@@ -11,8 +12,9 @@ function modalApi() {
 
 describe("showApplyOutcome", () => {
   it("maps each target to a localized success body, not the backend English string", () => {
-    expect(applyResultBodyKey("claude_code")).toBe("apply.resultClaudeOk");
-    expect(applyResultBodyKey("codex")).toBe("apply.resultCodexOk");
+    expect(APPLY_RESULT_OK_KEY.claude_code).toBe("apply.resultClaudeOk");
+    expect(APPLY_RESULT_OK_KEY.codex).toBe("apply.resultCodexOk");
+    expect(APPLY_RESULT_OK_KEY.omp).toBe("apply.resultOmpOk");
 
     const modal = modalApi();
     showApplyOutcome(modal, i18n.t.bind(i18n), {

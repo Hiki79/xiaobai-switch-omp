@@ -77,6 +77,12 @@ impl From<serde_json::Error> for AppError {
     }
 }
 
+impl From<serde_yaml::Error> for AppError {
+    fn from(value: serde_yaml::Error) -> Self {
+        Self::new("invalid_config", format!("yaml error: {value}"))
+    }
+}
+
 impl From<reqwest::Error> for AppError {
     fn from(value: reqwest::Error) -> Self {
         if value.is_timeout() {

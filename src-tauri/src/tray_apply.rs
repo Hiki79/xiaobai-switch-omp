@@ -167,8 +167,18 @@ pub fn hydrate_codex(site: &SiteRow, status: Option<&TargetLiveStatus>) -> Codex
     }
 }
 
-pub fn pick_tray_targets(has_claude_binding: bool, has_codex_binding: bool) -> Vec<TargetKind> {
-    if !has_claude_binding && !has_codex_binding {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OmpHydration {
+    pub model_id: Option<String>,
+    pub write_all_models: bool,
+}
+
+pub fn pick_tray_targets(
+    has_claude_binding: bool,
+    has_codex_binding: bool,
+    has_omp_binding: bool,
+) -> Vec<TargetKind> {
+    if !has_claude_binding && !has_codex_binding && !has_omp_binding {
         return vec![TargetKind::ClaudeCode, TargetKind::Codex];
     }
     let mut out = Vec::new();
@@ -177,6 +187,9 @@ pub fn pick_tray_targets(has_claude_binding: bool, has_codex_binding: bool) -> V
     }
     if has_codex_binding {
         out.push(TargetKind::Codex);
+    }
+    if has_omp_binding {
+        out.push(TargetKind::Omp);
     }
     out
 }
@@ -187,6 +200,7 @@ fn emit_failed(app: &AppHandle, err: &AppError) {
         "tray-apply-failed",
         TrayApplyFailed {
             code: (*code).into(),
+
             message: message.clone(),
         },
     );
@@ -204,6 +218,28 @@ pub fn apply_site_from_tray(app: &AppHandle, site_id: &str) {
         }
     }
 }
+pub fn hydrate_omp(site: &SiteRow, status: Option<&TargetLiveStatus>) -> OmpHydration {
+    let live = status.map(|s| &s.live_summary);
+    let on_site = applied_on_site(&site.id, status);
+    // default_model is a "<provider>/<model>" selector; keep the id part.
+    let live_model = live
+        .and_then(|s| live_str(s, &["default_model"]))
+        .map(|sel| sel.split_once('/').map(|(_, m)| m.to_string()).unwrap_or(sel))
+        .or_else(|| status.and_then(|s| s.applied_model_id.clone()));
+    let write_all = live
+        .and_then(|s| live_str(s, &["models"]))
+        .and_then(|v| v.parse::<usize>().ok())
+        .is_some_and(|n| n > 1);
+
+    OmpHydration {
+        model_id: if on_site {
+            live_model.or_else(|| site.selected_model_id.clone())
+        } else {
+            site.selected_model_id.clone()
+        },
+        write_all_models: on_site && write_all,
+    }
+}
 
 fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<ApplyTargetResult>> {
     let state = app.state::<AppState>();
@@ -214,7 +250,8 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
 
     let has_claude = bindings.iter().any(|b| b.target == TargetKind::ClaudeCode);
     let has_codex = bindings.iter().any(|b| b.target == TargetKind::Codex);
-    let targets = pick_tray_targets(has_claude, has_codex);
+    let has_omp = bindings.iter().any(|b| b.target == TargetKind::Omp);
+    let targets = pick_tray_targets(has_claude, has_codex, has_omp);
 
     let mut results = Vec::new();
     let mut attempted = false;
@@ -238,6 +275,7 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     h.sonnet_model,
                     h.haiku_model,
                     h.effort.map(|e| e.as_str().into()),
+                    None,
                     None,
                     None,
                     None,
@@ -272,6 +310,35 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     Some(h.image_generation),
                     Some(h.web_search),
                     Some(h.capability_source.as_str().into()),
+                    None,
+                )?;
+                results.extend(applied.results);
+            }
+            TargetKind::Omp => {
+                let h = hydrate_omp(&site, status);
+                let Some(model_id) = h.model_id.filter(|s| !s.trim().is_empty()) else {
+                    continue;
+                };
+                attempted = true;
+                let applied = crate::commands::apply::apply_site(
+                    app.clone(),
+                    app.state::<AppState>(),
+                    site.id.clone(),
+                    vec![TargetKind::Omp],
+                    model_id,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(h.write_all_models),
                 )?;
                 results.extend(applied.results);
             }
@@ -531,14 +598,18 @@ mod tests {
     #[test]
     fn pick_targets_defaults_to_both_when_unbound() {
         assert_eq!(
-            pick_tray_targets(false, false),
+            pick_tray_targets(false, false, false),
             vec![TargetKind::ClaudeCode, TargetKind::Codex]
         );
-        assert_eq!(pick_tray_targets(true, false), vec![TargetKind::ClaudeCode]);
-        assert_eq!(pick_tray_targets(false, true), vec![TargetKind::Codex]);
+        assert_eq!(pick_tray_targets(true, false, false), vec![TargetKind::ClaudeCode]);
+        assert_eq!(pick_tray_targets(false, true, false), vec![TargetKind::Codex]);
         assert_eq!(
-            pick_tray_targets(true, true),
-            vec![TargetKind::ClaudeCode, TargetKind::Codex]
+            pick_tray_targets(false, false, true),
+            vec![TargetKind::Omp]
+        );
+        assert_eq!(
+            pick_tray_targets(true, true, true),
+            vec![TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp]
         );
     }
 

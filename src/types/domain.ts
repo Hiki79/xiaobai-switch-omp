@@ -4,7 +4,7 @@ export type SiteProtocol = "openai_compatible" | "anthropic";
 /** Only affects Claude Code auth env key name. Codex ignores this. */
 export type ClaudeAuthKeyStyle = "anthropic_auth_token" | "anthropic_api_key";
 
-export type TargetKind = "claude_code" | "codex";
+export type TargetKind = "claude_code" | "codex" | "omp";
 
 export type ProxyMode = "system" | "none" | "custom";
 export type ProxyProtocol = "http" | "https" | "socks5";
@@ -164,6 +164,8 @@ export interface ApplyRequest {
   codexWebSearch?: boolean;
   /** `site` reads the site preset; `custom` uses the four bools above. */
   codexCapabilitySource?: CodexCapabilitySource;
+  /** Write the site model list into the omp provider entry. */
+  ompWriteAllModels?: boolean;
 }
 
 export interface ApplyTargetResult {
@@ -191,6 +193,7 @@ export interface AppSettings {
   alwaysOnTop: boolean;
   claudeHomeOverride: string | null;
   codexHomeOverride: string | null;
+  ompHomeOverride: string | null;
   codexEnvInjectMode: "auto" | "shell_rc" | "user_env" | "file_only";
   forceExclusiveClaudeAuthKey: boolean;
   autoCheckUpdate: boolean;

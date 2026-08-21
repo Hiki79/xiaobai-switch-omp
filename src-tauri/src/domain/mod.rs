@@ -63,6 +63,7 @@ impl ClaudeAuthKeyStyle {
 pub enum TargetKind {
     ClaudeCode,
     Codex,
+    Omp,
 }
 
 impl TargetKind {
@@ -70,12 +71,14 @@ impl TargetKind {
         match self {
             Self::ClaudeCode => "claude_code",
             Self::Codex => "codex",
+            Self::Omp => "omp",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "claude_code" => Some(Self::ClaudeCode),
             "codex" => Some(Self::Codex),
+            "omp" => Some(Self::Omp),
             _ => None,
         }
     }
@@ -366,6 +369,13 @@ pub struct CodexApplyOptions {
     pub capability_source: CapabilitySource,
 }
 
+/// Extra options for omp apply.
+#[derive(Debug, Clone, Default)]
+pub struct OmpApplyOptions {
+    pub write_all_models: bool,
+    pub catalog_models: Vec<(String, String)>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyTargetResult {
@@ -397,6 +407,8 @@ pub struct AppSettings {
     pub always_on_top: bool,
     pub claude_home_override: Option<String>,
     pub codex_home_override: Option<String>,
+    #[serde(default)]
+    pub omp_home_override: Option<String>,
     pub codex_env_inject_mode: String,
     pub force_exclusive_claude_auth_key: bool,
     #[serde(default = "default_true")]
@@ -484,6 +496,7 @@ impl Default for AppSettings {
             always_on_top: false,
             claude_home_override: None,
             codex_home_override: None,
+            omp_home_override: None,
             codex_env_inject_mode: "auto".into(),
             force_exclusive_claude_auth_key: false,
             auto_check_update: true,

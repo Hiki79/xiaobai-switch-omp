@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "XiaoBaiSwitch",
   "mainBinaryName": "XiaoBaiSwitch",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "identifier": "com.github.licoy.xiaobai-switch.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -63,9 +63,9 @@
       }
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcxRkYwQ0FEODY1QTU0QkIKUldTN1ZGcUdyUXovY1lNbVNPTFRNcXYvNHlpZ0dtNXRSNU5zM3paYU8vNW0xWkcyajM1a2I0T2QK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFDNjUxQzA0QUNEMkIxNDAKUldSQXNkS3NCQnhsSE42NTR2RXBjTmJmTlBSaVY4YWxQYXl1OTdTOXB3SjQ4WjdZRUg0STBKeWcK",
       "endpoints": [
-        "https://github.com/Licoy/xiaobai-switch/releases/latest/download/latest.json"
+        "https://github.com/Hiki79/xiaobai-switch/releases/latest/download/latest.json"
       ]
     }
   }

@@ -81,6 +81,7 @@ pub fn prune_all(max: u32) -> AppResult<usize> {
     let mut n = 0;
     n += prune_target_backups(TargetKind::ClaudeCode, max)?;
     n += prune_target_backups(TargetKind::Codex, max)?;
+    n += prune_target_backups(TargetKind::Omp, max)?;
     Ok(n)
 }
 
@@ -182,6 +183,8 @@ pub fn parse_backup_id(id: &str) -> AppResult<(TargetKind, String)> {
         (TargetKind::ClaudeCode, rest)
     } else if let Some(rest) = id.strip_prefix("codex-") {
         (TargetKind::Codex, rest)
+    } else if let Some(rest) = id.strip_prefix("omp-") {
+        (TargetKind::Omp, rest)
     } else {
         return Err(AppError::new("validation_failed", "invalid backup id"));
     };
@@ -229,6 +232,18 @@ pub fn mapped_dest(
             settings.codex_home_override.as_deref(),
         )?),
         (TargetKind::Codex, "codex.env") => Some(codex_env_path()?),
+        (TargetKind::Omp, "models.yml") => Some(crate::adapters::omp::models_path(
+            settings.omp_home_override.as_deref(),
+        )?),
+        (TargetKind::Omp, "models.yaml") => Some(crate::adapters::omp::models_path(
+            settings.omp_home_override.as_deref(),
+        )?),
+        (TargetKind::Omp, "config.yml") => Some(crate::adapters::omp::config_path(
+            settings.omp_home_override.as_deref(),
+        )?),
+        (TargetKind::Omp, "config.yaml") => Some(crate::adapters::omp::config_path(
+            settings.omp_home_override.as_deref(),
+        )?),
         _ => None,
     })
 }
@@ -239,6 +254,9 @@ fn dest_is_allowed(dest: &Path, settings: &AppSettings) -> bool {
         roots.push(p);
     }
     if let Ok(p) = crate::paths::resolve_claude_home(settings.claude_home_override.as_deref()) {
+        roots.push(p);
+    }
+    if let Ok(p) = crate::paths::resolve_omp_home(settings.omp_home_override.as_deref()) {
         roots.push(p);
     }
     if let Ok(p) = crate::paths::app_dir() {
@@ -332,6 +350,24 @@ fn summary_from_backup_dir(dir: &Path) -> HashMap<String, Option<String>> {
                 out.extend(codex::summary_from_config(&doc));
             }
         }
+    }
+    for stem in ["models.yml", "models.yaml"] {
+        let models_path = dir.join(stem);
+        if !models_path.exists() {
+            continue;
+        }
+        if let Ok(models) = crate::adapters::omp::read_models_yaml(&models_path) {
+            for cfg_stem in ["config.yml", "config.yaml"] {
+                let cfg_path = dir.join(cfg_stem);
+                if cfg_path.exists() {
+                    if let Ok(cfg) = crate::adapters::omp::read_models_yaml(&cfg_path) {
+                        out.extend(crate::adapters::omp::summary_from_docs(&models, &cfg));
+                    }
+                    break;
+                }
+            }
+        }
+        break;
     }
     let env_path = dir.join("codex.env");
     if env_path.exists() {

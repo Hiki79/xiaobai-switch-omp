@@ -4,6 +4,7 @@ import { Eraser, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SiteAvatar } from "@/components/sites/SiteAvatar";
 import { isAppError } from "@/lib/invoke";
+import { TARGET_LABEL_KEY } from "@/lib/targetMeta";
 import { revealInExplorer } from "@/lib/revealInExplorer";
 import { useSiteStore } from "@/stores";
 import type { ApplyStatus, CliToolInfo, TargetKind, TargetLiveStatus } from "@/types/domain";
@@ -70,8 +71,7 @@ export function TargetStatusCard({
     );
   }
 
-  const kindLabel =
-    status.kind === "claude_code" ? t("apply.targetClaude") : t("apply.targetCodex");
+  const kindLabel = t(TARGET_LABEL_KEY[status.kind]);
   const installed = status.installed;
   const version = status.version ?? tool?.version ?? null;
   const versionLabel = cliVersionLabel(version);

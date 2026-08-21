@@ -25,6 +25,7 @@ pub struct TrayLabels {
     pub check_update: &'static str,
     pub claude: &'static str,
     pub codex: &'static str,
+    pub omp: &'static str,
     pub applied: &'static str,
     pub stale: &'static str,
     pub orphan: &'static str,
@@ -45,6 +46,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             check_update: "Check for Updates",
             claude: "Claude Code",
             codex: "Codex",
+            omp: "omp",
             applied: "Applied",
             stale: "Stale",
             orphan: "Orphan",
@@ -62,6 +64,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             check_update: "检查更新",
             claude: "Claude Code",
             codex: "Codex",
+            omp: "omp",
             applied: "已应用",
             stale: "已过期",
             orphan: "配置游离",
@@ -88,6 +91,7 @@ fn kind_label(labels: &TrayLabels, kind: TargetKind) -> &'static str {
     match kind {
         TargetKind::ClaudeCode => labels.claude,
         TargetKind::Codex => labels.codex,
+        TargetKind::Omp => labels.omp,
     }
 }
 
@@ -128,8 +132,8 @@ pub fn format_model_line(model_id: Option<&str>) -> Option<String> {
     Some(truncate_label(model, TITLE_MAX_CHARS))
 }
 
-pub fn format_tooltip(labels: &TrayLabels, claude: &str, codex: &str) -> String {
-    format!("{}\n{}\n{}", labels.header, claude, codex)
+pub fn format_tooltip(labels: &TrayLabels, claude: &str, codex: &str, omp: &str) -> String {
+    format!("{}\n{}\n{}\n{}", labels.header, claude, codex, omp)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +174,8 @@ pub struct TraySnapshot {
     pub claude_model: Option<String>,
     pub codex_line: String,
     pub codex_model: Option<String>,
+    pub omp_line: String,
+    pub omp_model: Option<String>,
     pub tooltip: String,
     pub sites: Vec<QuickSite>,
 }
@@ -191,13 +197,22 @@ impl TraySnapshot {
             None,
             None,
         );
+        let omp = format_target_status_line(
+            &labels,
+            TargetKind::Omp,
+            ApplyStatus::NotApplied,
+            None,
+            None,
+        );
         Self {
             language: language.to_string(),
             claude_line: claude.clone(),
             claude_model: None,
             codex_line: codex.clone(),
             codex_model: None,
-            tooltip: format_tooltip(&labels, &claude, &codex),
+            omp_line: omp.clone(),
+            omp_model: None,
+            tooltip: format_tooltip(&labels, &claude, &codex, &omp),
             sites: vec![],
         }
     }
@@ -270,6 +285,10 @@ fn build_menu(
     if let Some(model) = &snapshot.codex_model {
         append_plain_item(app, &menu, "status_codex_model", model, false)?;
     }
+    append_plain_item(app, &menu, "status_omp", &snapshot.omp_line, false)?;
+    if let Some(model) = &snapshot.omp_model {
+        append_plain_item(app, &menu, "status_omp_model", model, false)?;
+    }
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     append_native_icon_item(
@@ -332,65 +351,40 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
             Vec::new()
         });
 
-    let find = |kind: TargetKind| statuses.iter().find(|s| s.kind == kind);
-    let claude = find(TargetKind::ClaudeCode);
-    let codex = find(TargetKind::Codex);
+    // One line + optional model line per target, iterated instead of the old
+    // duplicated per-target blocks.
+    let mut lines: Vec<(TargetKind, String, Option<String>, String)> = Vec::new();
+    for kind in [TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp] {
+        let status = statuses.iter().find(|s| s.kind == kind);
+        let line = match status {
+            Some(s) => format_target_status_line(
+                &labels,
+                kind,
+                s.status,
+                s.applied_site_name.as_deref(),
+                None,
+            ),
+            None => format_target_status_line(&labels, kind, ApplyStatus::NotApplied, None, None),
+        };
+        let model = status.and_then(|s| format_model_line(s.applied_model_id.as_deref()));
+        let tooltip_line = match status {
+            Some(s) => format_target_status_line(
+                &labels,
+                kind,
+                s.status,
+                s.applied_site_name.as_deref(),
+                s.applied_model_id.as_deref(),
+            ),
+            None => line.clone(),
+        };
+        lines.push((kind, line, model, tooltip_line));
+    }
 
-    let claude_line = match claude {
-        Some(s) => format_target_status_line(
-            &labels,
-            TargetKind::ClaudeCode,
-            s.status,
-            s.applied_site_name.as_deref(),
-            None,
-        ),
-        None => format_target_status_line(
-            &labels,
-            TargetKind::ClaudeCode,
-            ApplyStatus::NotApplied,
-            None,
-            None,
-        ),
-    };
-    let claude_model = claude.and_then(|s| format_model_line(s.applied_model_id.as_deref()));
-    let codex_line = match codex {
-        Some(s) => format_target_status_line(
-            &labels,
-            TargetKind::Codex,
-            s.status,
-            s.applied_site_name.as_deref(),
-            None,
-        ),
-        None => format_target_status_line(
-            &labels,
-            TargetKind::Codex,
-            ApplyStatus::NotApplied,
-            None,
-            None,
-        ),
-    };
-    let codex_model = codex.and_then(|s| format_model_line(s.applied_model_id.as_deref()));
-
-    let tooltip_claude = match claude {
-        Some(s) => format_target_status_line(
-            &labels,
-            TargetKind::ClaudeCode,
-            s.status,
-            s.applied_site_name.as_deref(),
-            s.applied_model_id.as_deref(),
-        ),
-        None => claude_line.clone(),
-    };
-    let tooltip_codex = match codex {
-        Some(s) => format_target_status_line(
-            &labels,
-            TargetKind::Codex,
-            s.status,
-            s.applied_site_name.as_deref(),
-            s.applied_model_id.as_deref(),
-        ),
-        None => codex_line.clone(),
-    };
+    let tooltip = format!(
+        "{}\n{}",
+        labels.header,
+        lines.iter().map(|(_, _, _, l)| l.as_str()).collect::<Vec<_>>().join("\n")
+    );
 
     let sites = state
         .db
@@ -407,12 +401,18 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
 
     TraySnapshot {
         language,
-        claude_line,
-        claude_model,
-        codex_line,
-        codex_model,
-        tooltip: format_tooltip(&labels, &tooltip_claude, &tooltip_codex),
-        sites: pick_quick_sites(&rows, &applied, QUICK_SITE_LIMIT),
+        claude_line: lines[0].1.clone(),
+        claude_model: lines[0].2.clone(),
+        codex_line: lines[1].1.clone(),
+        codex_model: lines[1].2.clone(),
+        omp_line: lines[2].1.clone(),
+        omp_model: lines[2].2.clone(),
+        tooltip,
+        sites: pick_quick_sites(
+            &rows,
+            &applied,
+            QUICK_SITE_LIMIT,
+        ),
     }
 }
 
@@ -623,11 +623,11 @@ mod tests {
     #[test]
     fn tooltip_has_product_and_both_targets() {
         let labels = tray_labels("zh-CN");
-        let tip = format_tooltip(&labels, "Claude Code · 已应用", "Codex · 未应用");
+        let tip = format_tooltip(&labels, "Claude Code · 已应用", "Codex · 未应用", "omp · 未应用");
         assert!(tip.starts_with("XiaoBaiSwitch"));
         assert!(tip.contains("Claude Code"));
         assert!(tip.contains("Codex"));
-        assert_eq!(tip.lines().count(), 3);
+        assert_eq!(tip.lines().count(), 4);
     }
 
     #[test]

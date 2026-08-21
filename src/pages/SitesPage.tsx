@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { TARGET_LABEL_KEY } from "@/lib/targetMeta";
 import { App, Button, Checkbox, Empty, Skeleton, Switch, Tooltip, theme } from "antd";
 import { Plus, Trash2, Pencil, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -189,7 +190,7 @@ export function SitesPage() {
     }
 
     const targetLabels = targets
-      .map((kind) => (kind === "claude_code" ? t("apply.targetClaude") : t("apply.targetCodex")))
+      .map((kind) => t(TARGET_LABEL_KEY[kind]))
       .join(t("common.listSep"));
 
     const dlg = modal.confirm({

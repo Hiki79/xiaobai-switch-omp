@@ -108,6 +108,12 @@ pub fn delete_site(
                         let _ = crate::env_inject::remove_codex_env(&settings, env_key);
                     }
                 }
+                crate::domain::TargetKind::Omp => {
+                    let _ = crate::adapters::omp::surgical_revert(
+                        &b,
+                        settings.omp_home_override.as_deref(),
+                    );
+                }
             }
             state
                 .db

@@ -5,7 +5,7 @@ use crate::capabilities::{
 use crate::domain::{
     ApplyRecordDto, ApplyResult, ApplyStatus, ApplyTargetResult, BackupInfo, BackupPreview,
     CapabilitySource, ClaudeApplyOptions, ClaudeAuthKeyStyle, ClaudeEffortLevel, CodexApplyOptions,
-    CodexReasoningEffort, TargetKind, TouchedKeys,
+    CodexReasoningEffort, OmpApplyOptions, SiteRow, TargetBinding, TargetKind, TouchedKeys,
 };
 use crate::error::{AppError, AppResult};
 use crate::lock::try_lock_target;
@@ -13,6 +13,7 @@ use crate::paths::backups_dir;
 use crate::repo;
 use crate::state::AppState;
 use chrono::Utc;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use tauri::State;
@@ -20,6 +21,98 @@ use uuid::Uuid;
 
 fn non_empty(s: Option<String>) -> Option<String> {
     s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
+/// Shared success path: persist binding + apply record, build the IPC result.
+#[allow(clippy::too_many_arguments)]
+fn record_success(
+    state: &AppState,
+    target: TargetKind,
+    site: &SiteRow,
+    model_id: &str,
+    applied_at: i64,
+    backup_root: &Path,
+    binding: &TargetBinding,
+    touched: &TouchedKeys,
+    backup_paths: Vec<String>,
+    live_summary: HashMap<String, Option<String>>,
+    message: String,
+    provider_id: Option<&str>,
+    touched_display: Vec<String>,
+) -> AppResult<ApplyTargetResult> {
+    let record_id = binding
+        .apply_record_id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let mut stored = binding.clone();
+    stored.apply_record_id = Some(record_id.clone());
+    state
+        .db
+        .with_conn(|c| repo::binding::upsert_binding(c, &stored))?;
+    state.db.with_conn(|c| {
+        repo::apply::insert_record(
+            c,
+            &record_id,
+            Some(&site.id),
+            &site.name,
+            target.as_str(),
+            model_id,
+            provider_id,
+            "success",
+            Some(&backup_root.display().to_string()),
+            touched,
+            None,
+            applied_at,
+        )
+    })?;
+    Ok(ApplyTargetResult {
+        target,
+        ok: true,
+        status: ApplyStatus::Applied,
+        backup_paths,
+        message,
+        live_summary: Some(live_summary),
+        touched_keys: Some(touched_display),
+    })
+}
+
+/// Shared failure path: persist a failed apply record, build the IPC result.
+#[allow(clippy::too_many_arguments)]
+fn record_failure(
+    state: &AppState,
+    target: TargetKind,
+    site: &SiteRow,
+    model_id: &str,
+    applied_at: i64,
+    backup_root: &Path,
+    error: &AppError,
+) -> ApplyTargetResult {
+    let touched = TouchedKeys::default();
+    let _ = state.db.with_conn(|c| {
+        repo::apply::insert_record(
+            c,
+            &Uuid::new_v4().to_string(),
+            Some(&site.id),
+            &site.name,
+            target.as_str(),
+            model_id,
+            None,
+            "failed",
+            Some(&backup_root.display().to_string()),
+            &touched,
+            Some(&error.to_string()),
+            applied_at,
+        )
+    });
+    ApplyTargetResult {
+        target,
+        ok: false,
+        status: ApplyStatus::Failed,
+        backup_paths: vec![],
+        message: error.to_string(),
+        live_summary: None,
+        touched_keys: None,
+    }
 }
 
 #[tauri::command]
@@ -41,6 +134,7 @@ pub fn apply_site(
     codex_image_generation: Option<bool>,
     codex_web_search: Option<bool>,
     codex_capability_source: Option<String>,
+    omp_write_all_models: Option<bool>,
 ) -> AppResult<ApplyResult> {
     if targets.is_empty() {
         return Err(AppError::new("validation_failed", "no targets selected"));
@@ -88,7 +182,10 @@ pub fn apply_site(
         };
 
     let write_all = codex_write_all_models.unwrap_or(false);
-    let catalog_models = if write_all && targets.contains(&TargetKind::Codex) {
+    let omp_write_all = omp_write_all_models.unwrap_or(false);
+    let need_catalog = (write_all && targets.contains(&TargetKind::Codex))
+        || (omp_write_all && targets.contains(&TargetKind::Omp));
+    let catalog_models = if need_catalog {
         state.db.with_conn(|c| {
             let models = repo::site::list_models(c, &site_id)?;
             Ok(models
@@ -98,6 +195,11 @@ pub fn apply_site(
         })?
     } else {
         vec![]
+    };
+
+    let omp_opts = OmpApplyOptions {
+        write_all_models: omp_write_all,
+        catalog_models: catalog_models.clone(),
     };
 
     let codex_opts = CodexApplyOptions {
@@ -127,174 +229,126 @@ pub fn apply_site(
             .db
             .with_conn(|c| repo::binding::get_binding(c, target))?;
 
-        if target == TargetKind::Codex {
-            match crate::adapters::codex::apply(
-                &site,
-                &api_key,
-                &model_id,
-                &codex_opts,
-                settings.codex_home_override.as_deref(),
-                &backup_root,
-            ) {
-                Ok(o) => {
-                    let inject_msg =
-                        crate::env_inject::inject_codex_env(&settings, &o.env_key, &api_key)
-                            .unwrap_or_else(|e| e.to_string());
-                    let record_id = o
-                        .binding
-                        .apply_record_id
-                        .clone()
-                        .unwrap_or_else(|| Uuid::new_v4().to_string());
-                    let mut binding = o.binding.clone();
-                    binding.apply_record_id = Some(record_id.clone());
-                    state
-                        .db
-                        .with_conn(|c| repo::binding::upsert_binding(c, &binding))?;
-                    state.db.with_conn(|c| {
-                        repo::apply::insert_record(
-                            c,
-                            &record_id,
-                            Some(&site.id),
-                            &site.name,
-                            target.as_str(),
+        let outcome = match target {
+            TargetKind::Codex => {
+                match crate::adapters::codex::apply(
+                    &site,
+                    &api_key,
+                    &model_id,
+                    &codex_opts,
+                    settings.codex_home_override.as_deref(),
+                    &backup_root,
+                ) {
+                    Ok(o) => {
+                        let inject_msg = crate::env_inject::inject_codex_env(
+                            &settings,
+                            &o.env_key,
+                            &api_key,
+                        )
+                        .unwrap_or_else(|e| e.to_string());
+                        record_success(
+                            &state,
+                            target,
+                            &site,
                             &model_id,
-                            Some(&o.provider_id),
-                            "success",
-                            Some(&backup_root.display().to_string()),
+                            applied_at,
+                            &backup_root,
+                            &o.binding,
                             &o.touched,
-                            None,
-                            applied_at,
+                            o.backup_paths,
+                            o.live_summary,
+                            format!("{} {}", o.message, inject_msg),
+                            Some(&o.provider_id),
+                            o.touched.env_keys.clone(),
                         )
-                    })?;
-                    results.push(ApplyTargetResult {
+                    }
+                    Err(e) => Ok(record_failure(
+                        &state,
                         target,
-                        ok: true,
-                        status: ApplyStatus::Applied,
-                        backup_paths: o.backup_paths,
-                        message: format!("{} {}", o.message, inject_msg),
-                        live_summary: Some(o.live_summary),
-                        touched_keys: Some(o.touched.env_keys),
-                    });
-                }
-                Err(e) => {
-                    let touched = TouchedKeys::default();
-                    let _ = state.db.with_conn(|c| {
-                        repo::apply::insert_record(
-                            c,
-                            &Uuid::new_v4().to_string(),
-                            Some(&site.id),
-                            &site.name,
-                            target.as_str(),
-                            &model_id,
-                            None,
-                            "failed",
-                            Some(&backup_root.display().to_string()),
-                            &touched,
-                            Some(&e.to_string()),
-                            applied_at,
-                        )
-                    });
-                    results.push(ApplyTargetResult {
-                        target,
-                        ok: false,
-                        status: ApplyStatus::Failed,
-                        backup_paths: vec![],
-                        message: e.to_string(),
-                        live_summary: None,
-                        touched_keys: None,
-                    });
+                        &site,
+                        &model_id,
+                        applied_at,
+                        &backup_root,
+                        &e,
+                    )),
                 }
             }
-            finalize_backup_dir(
-                &backup_root,
-                target,
-                &site.name,
-                &model_id,
-                None,
-                applied_at,
-                settings.max_backup_copies,
-            );
-            continue;
-        }
-
-        // Claude Code
-        match crate::adapters::claude_code::apply(
-            &site,
-            &api_key,
-            &model_id,
-            auth.clone(),
-            settings.force_exclusive_claude_auth_key,
-            &claude_opts,
-            binding_before.as_ref(),
-            settings.claude_home_override.as_deref(),
-            &backup_root,
-        ) {
-            Ok(o) => {
-                let record_id = o
-                    .binding
-                    .apply_record_id
-                    .clone()
-                    .unwrap_or_else(|| Uuid::new_v4().to_string());
-                let mut binding = o.binding.clone();
-                binding.apply_record_id = Some(record_id.clone());
-                state
-                    .db
-                    .with_conn(|c| repo::binding::upsert_binding(c, &binding))?;
-                state.db.with_conn(|c| {
-                    repo::apply::insert_record(
-                        c,
-                        &record_id,
-                        Some(&site.id),
-                        &site.name,
-                        target.as_str(),
+            TargetKind::Omp => {
+                match crate::adapters::omp::apply(
+                    &site,
+                    &api_key,
+                    &model_id,
+                    &omp_opts,
+                    settings.omp_home_override.as_deref(),
+                    &backup_root,
+                ) {
+                    Ok(o) => record_success(
+                        &state,
+                        target,
+                        &site,
                         &model_id,
-                        None,
-                        "success",
-                        Some(&backup_root.display().to_string()),
+                        applied_at,
+                        &backup_root,
+                        &o.binding,
                         &o.touched,
-                        None,
-                        applied_at,
-                    )
-                })?;
-                results.push(ApplyTargetResult {
-                    target,
-                    ok: true,
-                    status: ApplyStatus::Applied,
-                    backup_paths: o.backup_paths,
-                    message: o.message,
-                    live_summary: Some(o.live_summary),
-                    touched_keys: Some(o.touched.claude_env_keys),
-                });
-            }
-            Err(e) => {
-                let touched = TouchedKeys::default();
-                let _ = state.db.with_conn(|c| {
-                    repo::apply::insert_record(
-                        c,
-                        &Uuid::new_v4().to_string(),
-                        Some(&site.id),
-                        &site.name,
-                        target.as_str(),
+                        o.backup_paths,
+                        o.live_summary,
+                        o.message,
+                        o.binding.provider_id.as_deref(),
+                        vec![],
+                    ),
+                    Err(e) => Ok(record_failure(
+                        &state,
+                        target,
+                        &site,
                         &model_id,
-                        None,
-                        "failed",
-                        Some(&backup_root.display().to_string()),
-                        &touched,
-                        Some(&e.to_string()),
                         applied_at,
-                    )
-                });
-                results.push(ApplyTargetResult {
-                    target,
-                    ok: false,
-                    status: ApplyStatus::Failed,
-                    backup_paths: vec![],
-                    message: e.to_string(),
-                    live_summary: None,
-                    touched_keys: None,
-                });
+                        &backup_root,
+                        &e,
+                    )),
+                }
             }
-        }
+            TargetKind::ClaudeCode => {
+                match crate::adapters::claude_code::apply(
+                    &site,
+                    &api_key,
+                    &model_id,
+                    auth.clone(),
+                    settings.force_exclusive_claude_auth_key,
+                    &claude_opts,
+                    binding_before.as_ref(),
+                    settings.claude_home_override.as_deref(),
+                    &backup_root,
+                ) {
+                    Ok(o) => record_success(
+                        &state,
+                        target,
+                        &site,
+                        &model_id,
+                        applied_at,
+                        &backup_root,
+                        &o.binding,
+                        &o.touched,
+                        o.backup_paths,
+                        o.live_summary,
+                        o.message,
+                        None,
+                        o.touched.claude_env_keys.clone(),
+                    ),
+                    Err(e) => Ok(record_failure(
+                        &state,
+                        target,
+                        &site,
+                        &model_id,
+                        applied_at,
+                        &backup_root,
+                        &e,
+                    )),
+                }
+            }
+        };
+
+        results.push(outcome?);
         finalize_backup_dir(
             &backup_root,
             target,
@@ -391,6 +445,12 @@ pub fn revert_target(
                 let _ = crate::env_inject::remove_codex_env(&settings, env_key);
             }
         }
+        TargetKind::Omp => {
+            crate::adapters::omp::surgical_revert(
+                &binding,
+                settings.omp_home_override.as_deref(),
+            )?;
+        }
     }
     state
         .db
@@ -438,6 +498,11 @@ pub fn restore_official_target(
                 let _ = crate::env_inject::remove_codex_env(&settings, key);
             }
         }),
+        TargetKind::Omp => crate::adapters::omp::restore_official(
+            settings.omp_home_override.as_deref(),
+            &backup_root,
+        )
+        .map(|_| ()),
     };
 
     match result {
@@ -496,7 +561,7 @@ pub fn list_backups(
     let targets: Vec<TargetKind> = if let Some(t) = target.as_deref().and_then(TargetKind::parse) {
         vec![t]
     } else {
-        vec![TargetKind::ClaudeCode, TargetKind::Codex]
+        vec![TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp]
     };
     backup::list_backups_in(&root, &targets, |dir| {
         state
