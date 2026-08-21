@@ -70,6 +70,43 @@ fn expand_catalog_path(raw: &str, codex_home: &std::path::Path) -> Option<PathBu
     }
 }
 
+fn is_our_catalog(raw: &str, our_catalog: &PathBuf) -> bool {
+    if raw == our_catalog.display().to_string() {
+        return true;
+    }
+    PathBuf::from(raw).file_name().and_then(|f| f.to_str())
+        == our_catalog.file_name().and_then(|f| f.to_str())
+}
+
+/// Drop `model_catalog_json` plus the catalog file it points at when both were
+/// written by us. Foreign catalogs (other tools') are left untouched.
+fn remove_stale_catalog(
+    doc: &mut DocumentMut,
+    our_catalog: &PathBuf,
+    backup_root: &PathBuf,
+    backup_paths: &mut Vec<String>,
+) -> AppResult<()> {
+    let Some(raw) = doc.get("model_catalog_json").and_then(|i| i.as_str()) else {
+        return Ok(());
+    };
+    if !is_our_catalog(raw, our_catalog) {
+        return Ok(());
+    }
+    let codex_home = our_catalog
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_default();
+    if let Some(path) = expand_catalog_path(raw, &codex_home) {
+        if path.exists() {
+            let bak = backup_file(&path, backup_root)?;
+            backup_paths.push(bak.display().to_string());
+            let _ = fs::remove_file(&path);
+        }
+    }
+    doc.as_table_mut().remove("model_catalog_json");
+    Ok(())
+}
+
 pub fn model_catalog_path(codex_home_override: Option<&str>) -> AppResult<PathBuf> {
     Ok(resolve_codex_home(codex_home_override)?.join("xiaobai-model-catalog.json"))
 }
@@ -172,6 +209,14 @@ fn build_model_catalog(
                 "input_modalities": modalities,
                 "priority": i + 1,
                 "default_reasoning_level": "medium",
+                // Fields below are required by Codex's ModelInfo schema; omitting
+                // any of them makes Codex fail to parse the catalog and refuse to
+                // start (verified against codex-cli 0.148.0).
+                "shell_type": "unified_exec",
+                "support_verbosity": false,
+                "truncation_policy": { "mode": "tokens", "limit": 10000 },
+                "experimental_supported_tools": [],
+                "base_instructions": "",
                 "supported_reasoning_levels": [
                     { "effort": "low", "description": "Fast responses with lighter reasoning" },
                     { "effort": "medium", "description": "Balances speed and reasoning depth" },
@@ -248,6 +293,13 @@ pub fn apply(
     apply_web_search(&mut doc, options.web_search);
     apply_image_understanding(&mut doc, options.image_understanding);
     apply_image_generation(&mut doc, options.image_generation);
+
+    // A catalog from a previous apply must not survive a re-apply with the
+    // toggle off: Codex hard-fails on startup when model_catalog_json points
+    // at a file it cannot parse.
+    if !options.write_all_models {
+        remove_stale_catalog(&mut doc, &catalog_path, backup_root, &mut backup_paths)?;
+    }
 
     // Optional model catalog for in-app model switching
     if options.write_all_models {
@@ -1222,6 +1274,60 @@ mod capability_write_tests {
             .and_then(|t| t.get("image_generation"))
             .is_none());
         assert_eq!(doc["features"]["fast_mode"].as_bool(), Some(true));
+    }
+}
+
+#[cfg(test)]
+mod catalog_schema_tests {
+    use super::*;
+    use serde_json::json;
+    use tempfile::tempdir;
+
+    #[test]
+    fn catalog_contains_codex_required_fields() {
+        let catalog = build_model_catalog(&[("m".into(), "M".into())], "S", false);
+        let model = &catalog["models"][0];
+        assert_eq!(model["shell_type"], json!("unified_exec"));
+        assert_eq!(model["support_verbosity"], json!(false));
+        assert_eq!(model["truncation_policy"]["mode"], json!("tokens"));
+        assert!(model["truncation_policy"]["limit"].is_u64());
+        assert_eq!(model["experimental_supported_tools"], json!([]));
+        assert_eq!(model["base_instructions"], json!(""));
+    }
+
+    #[test]
+    fn remove_stale_catalog_drops_ours_and_backs_up() {
+        let tmp = tempdir().unwrap();
+        let home = tmp.path();
+        let ours = home.join("xiaobai-model-catalog.json");
+        fs::write(&ours, r#"{"models":[]}"#).unwrap();
+        let mut doc = DocumentMut::new();
+        doc["model_catalog_json"] = value(ours.display().to_string());
+        let mut backups = Vec::new();
+        remove_stale_catalog(&mut doc, &ours, &home.join("bak"), &mut backups).unwrap();
+        assert!(doc.get("model_catalog_json").is_none());
+        assert!(!ours.exists());
+        assert_eq!(backups.len(), 1);
+        assert!(PathBuf::from(&backups[0]).exists());
+    }
+
+    #[test]
+    fn remove_stale_catalog_leaves_foreign_catalogs() {
+        let tmp = tempdir().unwrap();
+        let home = tmp.path();
+        let foreign = home.join("other-catalog.json");
+        fs::write(&foreign, "{}").unwrap();
+        let ours = home.join("xiaobai-model-catalog.json");
+        let mut doc = DocumentMut::new();
+        doc["model_catalog_json"] = value(foreign.display().to_string());
+        let mut backups = Vec::new();
+        remove_stale_catalog(&mut doc, &ours, &home.join("bak"), &mut backups).unwrap();
+        assert_eq!(
+            doc["model_catalog_json"].as_str(),
+            Some(foreign.display().to_string().as_str())
+        );
+        assert!(foreign.exists());
+        assert!(backups.is_empty());
     }
 }
 
