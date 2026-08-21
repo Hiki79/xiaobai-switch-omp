@@ -23,7 +23,11 @@ function toActiveKeys(keys: string | string[]): string[] {
 }
 
 function shouldOpenAdvanced(protocol?: SiteProtocol | null, notes?: string | null) {
-  return protocol === "anthropic" || Boolean(notes?.trim());
+  return (
+    protocol === "anthropic" ||
+    protocol === "openai_native" ||
+    Boolean(notes?.trim())
+  );
 }
 
 export interface SiteFormInitialValues {
@@ -198,6 +202,7 @@ export function SiteFormModal({ open, site, initialValues, onClose, onSaved }: P
                       <Select
                         options={[
                           { value: "openai_compatible", label: t("sites.protocolOpenai") },
+                          { value: "openai_native", label: t("sites.protocolOpenaiNative") },
                           { value: "anthropic", label: t("sites.protocolAnthropic") },
                         ]}
                       />

@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { Site, SiteModel, TargetLiveStatus } from "@/types/domain";
 import {
   buildModelOptions,
+  claudeEffortLevelsForModel,
+  codexReasoningLevelsForModel,
+  defaultReasoningLevel,
   hydrateClaudeForm,
   hydrateCodexForm,
+  hydrateOmpForm,
   hydrateZcodeForm,
+  ompReasoningLevelsForModel,
   pickApplySiteId,
   selectableApplySites,
   zcodeReasoningLevelsForModel,
@@ -345,5 +350,95 @@ describe("hydrateZcodeForm", () => {
     };
     expect(zcodeReasoningLevelsForModel("vendor-model", model)).toEqual(["quick", "thorough"]);
     expect(zcodeReasoningLevelsForModel("glm-5.3")).toEqual(["low", "max", "high"]);
+  });
+});
+
+describe("per-target reasoning levels", () => {
+  it("codex keeps only codex-valid efforts per model family", () => {
+    expect(codexReasoningLevelsForModel("glm-5.3")).toEqual(["low", "max", "high"]);
+    expect(codexReasoningLevelsForModel("glm-5.2")).toEqual(["high", "max"]);
+    expect(codexReasoningLevelsForModel("gpt-5.2")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(codexReasoningLevelsForModel("deepseek-v4")).toEqual(["high", "max"]);
+  });
+
+  it("codex falls back to the default family ladder for unknown models", () => {
+    expect(codexReasoningLevelsForModel("mystery-model")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "max",
+    ]);
+  });
+
+  it("claude keeps only claude-valid efforts per model family", () => {
+    expect(claudeEffortLevelsForModel("deepseek-v4")).toEqual(["high", "max"]);
+    expect(claudeEffortLevelsForModel("claude-opus-5")).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(claudeEffortLevelsForModel("mystery-model")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "max",
+    ]);
+  });
+
+  it("omp keeps only the omp effort ladder", () => {
+    expect(ompReasoningLevelsForModel("glm-5.2")).toEqual(["high", "max"]);
+    expect(ompReasoningLevelsForModel("mystery-model")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "max",
+    ]);
+  });
+
+  it("default level prefers the strongest supported effort", () => {
+    expect(defaultReasoningLevel(["low", "max", "high"])).toBe("max");
+    expect(defaultReasoningLevel(["low", "medium", "high", "xhigh"])).toBe("xhigh");
+    expect(defaultReasoningLevel(["low", "medium", "high", "xhigh"], "low")).toBe("low");
+    expect(defaultReasoningLevel(["minimal", "off"])).toBe("minimal");
+  });
+});
+
+describe("hydrateOmpForm reasoning", () => {
+  const ompSite = site({ id: "omp-site", selectedModelId: "glm-5.3" });
+
+  it("reads reasoning level and bare model from the live summary", () => {
+    const live = status({
+      kind: "omp",
+      appliedSiteId: "omp-site",
+      liveSummary: {
+        default_model: "xiaobai_omp-site/glm-5.3:max",
+        model: "glm-5.3",
+        reasoning_level: "max",
+        reasoning_levels: "low,max,high",
+      },
+    });
+    const defaults = hydrateOmpForm(ompSite, live);
+    expect(defaults.modelId).toBe("glm-5.3");
+    expect(defaults.reasoningLevels).toEqual(["low", "max", "high"]);
+    expect(defaults.reasoningLevel).toBe("max");
+  });
+
+  it("infers levels for a fresh site and strips selector suffixes", () => {
+    const live = status({
+      kind: "omp",
+      appliedSiteId: "other-site",
+      liveSummary: {
+        default_model: "xiaobai_other/glm-5.3:high",
+      },
+    });
+    const defaults = hydrateOmpForm(ompSite, live);
+    expect(defaults.modelId).toBe("glm-5.3");
+    expect(defaults.reasoningLevels).toEqual(["low", "max", "high"]);
+    expect(defaults.reasoningLevel).toBe("max");
   });
 });

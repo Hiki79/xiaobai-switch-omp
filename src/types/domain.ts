@@ -1,5 +1,5 @@
 /** Model list / probe protocol */
-export type SiteProtocol = "openai_compatible" | "anthropic";
+export type SiteProtocol = "openai_compatible" | "openai_native" | "anthropic";
 
 /** Only affects Claude Code auth env key name. Codex ignores this. */
 export type ClaudeAuthKeyStyle = "anthropic_auth_token" | "anthropic_api_key";
@@ -137,7 +137,7 @@ export interface TargetLiveStatus {
 export type ClaudeEffortLevel = "low" | "medium" | "high" | "max";
 
 /** Codex reasoning effort in config.toml */
-export type CodexReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+export type CodexReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /** ZCode reasoning variants are model-defined strings (for example low/high/max). */
 export type ZcodeReasoningLevel = string;
@@ -169,6 +169,10 @@ export interface ApplyRequest {
   codexCapabilitySource?: CodexCapabilitySource;
   /** Write the site model list into the omp provider entry. */
   ompWriteAllModels?: boolean;
+  /** Effort ladder written into omp modelOverrides thinking levels. */
+  ompReasoningLevels?: string[] | null;
+  /** Default thinking level applied via the `:level` modelRoles suffix. */
+  ompReasoningLevel?: string | null;
   /** ZCode model-defined reasoning variants and the selected default variant. */
   zcodeReasoningLevels?: ZcodeReasoningLevel[] | null;
   zcodeReasoningLevel?: ZcodeReasoningLevel | null;

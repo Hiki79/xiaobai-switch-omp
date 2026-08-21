@@ -171,6 +171,8 @@ pub fn hydrate_codex(site: &SiteRow, status: Option<&TargetLiveStatus>) -> Codex
 pub struct OmpHydration {
     pub model_id: Option<String>,
     pub write_all_models: bool,
+    pub reasoning_levels: Vec<String>,
+    pub reasoning_level: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -267,15 +269,28 @@ pub fn apply_site_from_tray(app: &AppHandle, site_id: &str) {
 pub fn hydrate_omp(site: &SiteRow, status: Option<&TargetLiveStatus>) -> OmpHydration {
     let live = status.map(|s| &s.live_summary);
     let on_site = applied_on_site(&site.id, status);
-    // default_model is a "<provider>/<model>" selector; keep the id part.
+    // default_model is a "<provider>/<model>[:level]" selector; keep the id part.
     let live_model = live
         .and_then(|s| live_str(s, &["default_model"]))
         .map(|sel| sel.split_once('/').map(|(_, m)| m.to_string()).unwrap_or(sel))
+        .map(|tail| {
+            tail.rsplit_once(':')
+                .map(|(m, _)| m.to_string())
+                .unwrap_or(tail)
+        })
         .or_else(|| status.and_then(|s| s.applied_model_id.clone()));
     let write_all = live
         .and_then(|s| live_str(s, &["models"]))
         .and_then(|v| v.parse::<usize>().ok())
         .is_some_and(|n| n > 1);
+    let reasoning_levels = live
+        .and_then(|s| live_str(s, &["reasoning_levels"]))
+        .map(|v| v.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect())
+        .unwrap_or_default();
+    let reasoning_level = live
+        .and_then(|s| live_str(s, &["reasoning_level"]))
+        .map(String::from)
+        .filter(|s| !s.is_empty());
 
     OmpHydration {
         model_id: if on_site {
@@ -284,6 +299,8 @@ pub fn hydrate_omp(site: &SiteRow, status: Option<&TargetLiveStatus>) -> OmpHydr
             site.selected_model_id.clone()
         },
         write_all_models: on_site && write_all,
+        reasoning_levels,
+        reasoning_level,
     }
 }
 
@@ -332,6 +349,8 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     None,
                     None,
+                    None,
+                    None,
                 )?;
                 results.extend(applied.results);
             }
@@ -359,6 +378,8 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     Some(h.image_generation),
                     Some(h.web_search),
                     Some(h.capability_source.as_str().into()),
+                    None,
+                    None,
                     None,
                     None,
                     None,
@@ -390,6 +411,8 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     None,
                     Some(h.write_all_models),
+                    Some(h.reasoning_levels),
+                    h.reasoning_level,
                     None,
                     None,
                 )?;
@@ -407,6 +430,8 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     site.id.clone(),
                     vec![TargetKind::Zcode],
                     model_id,
+                    None,
+                    None,
                     None,
                     None,
                     None,

@@ -8,7 +8,7 @@ import { ApplyFooter } from "./ApplyFooter";
 import { SiteSelect } from "./SiteSelect";
 import { TargetStatusCard, statusFor, toolFor } from "./TargetStatusCard";
 import { useApplySiteSelection } from "./useApplySiteSelection";
-import { buildModelOptions, hydrateClaudeForm } from "./hydrateApplyForm";
+import { buildModelOptions, claudeEffortLevelsForModel, defaultReasoningLevel, hydrateClaudeForm } from "./hydrateApplyForm";
 import { showApplyException, showApplyOutcome } from "./showApplyOutcome";
 
 const rowStyle: React.CSSProperties = { padding: "4px 0" };
@@ -78,6 +78,28 @@ export const ClaudeApplyPanel = memo(function ClaudeApplyPanel() {
     () => buildModelOptions(models, [modelId, opusModel, sonnetModel, haikuModel]),
     [models, modelId, opusModel, sonnetModel, haikuModel],
   );
+
+  const effortLevels = useMemo(() => claudeEffortLevelsForModel(modelId), [modelId]);
+
+  const handleModelChange = (nextModelId: string) => {
+    setModelId(nextModelId);
+    setEffort((current) =>
+      defaultReasoningLevel(claudeEffortLevelsForModel(nextModelId), current),
+    );
+  };
+
+  const effortLabel = (value: ClaudeEffortLevel): string => {
+    switch (value) {
+      case "low":
+        return t("apply.effortLow");
+      case "medium":
+        return t("apply.effortMedium");
+      case "high":
+        return t("apply.effortHigh");
+      case "max":
+        return t("apply.effortMax");
+    }
+  };
 
   const handleApply = async () => {
     if (!site) {
@@ -161,7 +183,7 @@ export const ClaudeApplyPanel = memo(function ClaudeApplyPanel() {
                     value={modelId}
                     placeholder={t("sites.selectModel")}
                     options={modelOptions}
-                    onChange={setModelId}
+                    onChange={handleModelChange}
                     showSearch
                     optionFilterProp="label"
                     disabled={!site}
@@ -238,12 +260,10 @@ export const ClaudeApplyPanel = memo(function ClaudeApplyPanel() {
                   allowClear
                   value={effort}
                   onChange={(v) => setEffort(v as ClaudeEffortLevel | undefined)}
-                  options={[
-                    { value: "low", label: t("apply.effortLow") },
-                    { value: "medium", label: t("apply.effortMedium") },
-                    { value: "high", label: t("apply.effortHigh") },
-                    { value: "max", label: t("apply.effortMax") },
-                  ]}
+                  options={effortLevels.map((value) => ({
+                    value,
+                    label: effortLabel(value),
+                  }))}
                 />
               </div>
             </SettingsGroup>

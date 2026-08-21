@@ -207,7 +207,12 @@ export async function handleBrowserCommand<T>(
       const apiKey = input?.apiKey?.trim() ?? "";
       if (!name) throw { code: "validation_failed", message: "site name is required" };
       if (!apiKey) throw { code: "validation_failed", message: "API key is required" };
-      const protocol = input.protocol === "anthropic" ? "anthropic" : "openai_compatible";
+      const protocol =
+        input.protocol === "anthropic"
+          ? "anthropic"
+          : input.protocol === "openai_native"
+            ? "openai_native"
+            : "openai_compatible";
       const urls =
         input.baseUrls && input.baseUrls.length > 0
           ? input.baseUrls

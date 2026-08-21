@@ -136,6 +136,8 @@ pub fn apply_site(
     codex_web_search: Option<bool>,
     codex_capability_source: Option<String>,
     omp_write_all_models: Option<bool>,
+    omp_reasoning_levels: Option<Vec<String>>,
+    omp_reasoning_level: Option<String>,
     zcode_reasoning_levels: Option<Vec<String>>,
     zcode_reasoning_level: Option<String>,
 ) -> AppResult<ApplyResult> {
@@ -203,6 +205,8 @@ pub fn apply_site(
     let omp_opts = OmpApplyOptions {
         write_all_models: omp_write_all,
         catalog_models: catalog_models.clone(),
+        reasoning_levels: omp_reasoning_levels.unwrap_or_default(),
+        reasoning_level: non_empty(omp_reasoning_level),
     };
 
     let zcode_opts = ZcodeApplyOptions {

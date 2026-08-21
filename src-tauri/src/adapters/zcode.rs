@@ -159,18 +159,19 @@ fn choose_level(levels: &[String], requested: Option<&str>, previous: Option<Str
         .unwrap_or_else(|| levels[0].clone())
 }
 
-fn base_url(site: &SiteRow) -> AppResult<(String, &'static str, &'static str)> {
+fn base_url(site: &SiteRow) -> AppResult<(String, &'static str, Option<&'static str>)> {
     let preview = crate::url_normalize::normalize_base_url(&site.base_url)?;
     match site.protocol {
         SiteProtocol::Anthropic => Ok((
             preview.claude_base_url,
             "anthropic",
-            "anthropic-messages",
+            Some("anthropic-messages"),
         )),
+        SiteProtocol::OpenaiNative => Ok((preview.codex_base_url, "openai", None)),
         SiteProtocol::OpenaiCompatible => Ok((
             preview.codex_base_url,
             "openai-compatible",
-            "openai-chat-completions",
+            Some("openai-chat-completions"),
         )),
     }
 }
@@ -323,7 +324,9 @@ pub fn apply(
     provider_obj.insert("source".into(), Value::String("custom".into()));
     provider_obj.insert("kind".into(), Value::String(kind.into()));
     provider_obj.insert("defaultKind".into(), Value::String(kind.into()));
-    provider_obj.insert("apiFormat".into(), Value::String(api_format.into()));
+    if let Some(api_format) = api_format {
+        provider_obj.insert("apiFormat".into(), Value::String(api_format.into()));
+    }
     provider_obj.insert("enabled".into(), Value::Bool(true));
     let options_obj = provider_obj
         .entry("options")
@@ -698,6 +701,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(status, ApplyStatus::Applied);
+    }
+
+    #[test]
+    fn apply_openai_native_writes_openai_kind_without_api_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("v2");
+        apply(
+            &site(SiteProtocol::OpenaiNative),
+            "sk-secret",
+            "gpt-5.2",
+            &ZcodeApplyOptions::default(),
+            Some(home.to_str().unwrap()),
+            &dir.path().join("backups"),
+        )
+        .unwrap();
+        let root = read_config(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
+        let provider = provider_value(&root, "xiaobai-site-123").unwrap();
+        assert_eq!(string_at(provider, "kind"), Some("openai"));
+        assert!(provider.get("apiFormat").is_none());
+        assert!(provider
+            .get("options")
+            .and_then(|o| o.get("baseURL"))
+            .and_then(Value::as_str)
+            .is_some_and(|u| u.ends_with("/v1")));
     }
 
     #[test]

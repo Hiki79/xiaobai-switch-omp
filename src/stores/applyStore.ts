@@ -105,6 +105,8 @@ export const useApplyStore = create<ApplyState>((set, get) => ({
         codexWebSearch: req.codexWebSearch ?? false,
         codexCapabilitySource: req.codexCapabilitySource ?? "site",
         ompWriteAllModels: req.ompWriteAllModels ?? false,
+        ompReasoningLevels: req.ompReasoningLevels ?? null,
+        ompReasoningLevel: req.ompReasoningLevel ?? null,
         zcodeReasoningLevels: req.zcodeReasoningLevels ?? null,
         zcodeReasoningLevel: req.zcodeReasoningLevel ?? null,
       });

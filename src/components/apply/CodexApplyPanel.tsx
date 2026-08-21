@@ -14,7 +14,7 @@ import { ApplyFooter } from "./ApplyFooter";
 import { SiteSelect } from "./SiteSelect";
 import { TargetStatusCard, statusFor, toolFor } from "./TargetStatusCard";
 import { useApplySiteSelection } from "./useApplySiteSelection";
-import { buildModelOptions, hydrateCodexForm } from "./hydrateApplyForm";
+import { buildModelOptions, codexReasoningLevelsForModel, defaultReasoningLevel, hydrateCodexForm } from "./hydrateApplyForm";
 import { showApplyException, showApplyOutcome } from "./showApplyOutcome";
 import { CodexCapabilitySwitchList } from "./CodexCapabilitySwitchList";
 
@@ -87,6 +87,32 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
     () => buildModelOptions(models, [modelId]),
     [models, modelId],
   );
+
+  const effortLevels = useMemo(() => codexReasoningLevelsForModel(modelId), [modelId]);
+
+  const handleModelChange = (nextModelId: string) => {
+    setModelId(nextModelId);
+    setReasoning((current) =>
+      defaultReasoningLevel(codexReasoningLevelsForModel(nextModelId), current),
+    );
+  };
+
+  const effortLabel = (value: CodexReasoningEffort): string => {
+    switch (value) {
+      case "minimal":
+        return t("apply.effortMinimal");
+      case "low":
+        return t("apply.effortLow");
+      case "medium":
+        return t("apply.effortMedium");
+      case "high":
+        return t("apply.effortHigh");
+      case "xhigh":
+        return t("apply.effortXhigh");
+      case "max":
+        return t("apply.effortMax");
+    }
+  };
 
   const handleApply = async () => {
     if (!site) {
@@ -169,7 +195,7 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
                     value={modelId}
                     placeholder={t("sites.selectModel")}
                     options={modelOptions}
-                    onChange={setModelId}
+                    onChange={handleModelChange}
                     showSearch
                     optionFilterProp="label"
                     disabled={!site}
@@ -218,13 +244,10 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
                   allowClear
                   value={reasoning}
                   onChange={(v) => setReasoning(v as CodexReasoningEffort | undefined)}
-                  options={[
-                    { value: "minimal", label: t("apply.effortMinimal") },
-                    { value: "low", label: t("apply.effortLow") },
-                    { value: "medium", label: t("apply.effortMedium") },
-                    { value: "high", label: t("apply.effortHigh") },
-                    { value: "xhigh", label: t("apply.effortXhigh") },
-                  ]}
+                  options={effortLevels.map((value) => ({
+                    value,
+                    label: effortLabel(value),
+                  }))}
                 />
               </div>
             </SettingsGroup>

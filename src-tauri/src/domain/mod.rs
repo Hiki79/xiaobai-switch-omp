@@ -6,6 +6,7 @@ use std::collections::HashMap;
 #[serde(rename_all = "snake_case")]
 pub enum SiteProtocol {
     OpenaiCompatible,
+    OpenaiNative,
     Anthropic,
 }
 
@@ -13,11 +14,13 @@ impl SiteProtocol {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::OpenaiCompatible => "openai_compatible",
+            Self::OpenaiNative => "openai_native",
             Self::Anthropic => "anthropic",
         }
     }
     pub fn parse(s: &str) -> Self {
         match s {
+            "openai_native" | "openai-native" => Self::OpenaiNative,
             "anthropic" => Self::Anthropic,
             _ => Self::OpenaiCompatible,
         }
@@ -302,6 +305,7 @@ pub enum CodexReasoningEffort {
     Medium,
     High,
     Xhigh,
+    Max,
 }
 
 impl CodexReasoningEffort {
@@ -312,6 +316,7 @@ impl CodexReasoningEffort {
             Self::Medium => "medium",
             Self::High => "high",
             Self::Xhigh => "xhigh",
+            Self::Max => "max",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
@@ -321,6 +326,7 @@ impl CodexReasoningEffort {
             "medium" => Some(Self::Medium),
             "high" => Some(Self::High),
             "xhigh" => Some(Self::Xhigh),
+            "max" => Some(Self::Max),
             _ => None,
         }
     }
@@ -377,6 +383,10 @@ pub struct CodexApplyOptions {
 pub struct OmpApplyOptions {
     pub write_all_models: bool,
     pub catalog_models: Vec<(String, String)>,
+    /// Effort ladder exposed to omp via modelOverrides.<model>.thinking.levels.
+    pub reasoning_levels: Vec<String>,
+    /// Default level applied as the `:level` suffix on modelRoles.default.
+    pub reasoning_level: Option<String>,
 }
 
 /// Extra options for ZCode apply. ZCode stores the available reasoning

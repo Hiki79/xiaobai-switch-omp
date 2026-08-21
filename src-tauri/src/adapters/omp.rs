@@ -110,6 +110,7 @@ fn ensure_mapping<'a>(parent: &'a mut Mapping, key: &str) -> AppResult<&'a mut M
 fn api_for_protocol(protocol: &SiteProtocol) -> &'static str {
     match protocol {
         SiteProtocol::OpenaiCompatible => "openai-completions",
+        SiteProtocol::OpenaiNative => "openai-responses",
         SiteProtocol::Anthropic => "anthropic-messages",
     }
 }
@@ -126,7 +127,55 @@ fn model_entry(id: &str, name: &str) -> Yaml {
     Yaml::Mapping(m)
 }
 
-fn build_provider(site: &SiteRow, api_key: &str, base_url: &str, models: Vec<Yaml>) -> Yaml {
+/// Effort levels omp understands on the `:level` role suffix and in
+/// `thinking.levels` (oh-my-pi docs: off|minimal|low|medium|high|xhigh|max).
+pub const OMP_EFFORT_LEVELS: [&str; 7] = [
+    "off", "minimal", "low", "medium", "high", "xhigh", "max",
+];
+
+fn sanitize_level(raw: &str) -> Option<String> {
+    let value = raw.trim().to_ascii_lowercase();
+    OMP_EFFORT_LEVELS
+        .contains(&value.as_str())
+        .then(|| value.to_string())
+}
+
+fn sanitize_levels(raw: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for value in raw {
+        if let Some(level) = sanitize_level(value) {
+            if !out.contains(&level) {
+                out.push(level);
+            }
+        }
+    }
+    out
+}
+
+/// Effort ladder + reasoning flags omp needs to expose thinking control for a
+/// custom provider model (mirrors the modelOverrides shape omp itself writes).
+fn thinking_override(levels: &[String]) -> Yaml {
+    let mut thinking = Mapping::new();
+    thinking.insert(s("mode"), s("effort"));
+    let list = levels.iter().map(|l| s(l)).collect();
+    thinking.insert(s("levels"), Yaml::Sequence(list));
+    let mut compat = Mapping::new();
+    compat.insert(s("supportsReasoningEffort"), Yaml::Bool(true));
+    let mut entry = Mapping::new();
+    entry.insert(s("reasoning"), Yaml::Bool(true));
+    entry.insert(s("thinking"), Yaml::Mapping(thinking));
+    entry.insert(s("compat"), Yaml::Mapping(compat));
+    Yaml::Mapping(entry)
+}
+
+fn build_provider(
+    site: &SiteRow,
+    api_key: &str,
+    base_url: &str,
+    models: Vec<Yaml>,
+    options: &OmpApplyOptions,
+    model_id: &str,
+) -> Yaml {
     let mut prov = Mapping::new();
     prov.insert(s("baseUrl"), s(base_url));
     prov.insert(s("apiKey"), s(api_key));
@@ -136,6 +185,12 @@ fn build_provider(site: &SiteRow, api_key: &str, base_url: &str, models: Vec<Yam
         // Anthropic strict tool schemas; omp documents both switches.
         prov.insert(s("authHeader"), Yaml::Bool(true));
         prov.insert(s("disableStrictTools"), Yaml::Bool(true));
+    }
+    let levels = sanitize_levels(&options.reasoning_levels);
+    if !levels.is_empty() {
+        let mut overrides = Mapping::new();
+        overrides.insert(s(model_id.trim()), thinking_override(&levels));
+        prov.insert(s("modelOverrides"), Yaml::Mapping(overrides));
     }
     prov.insert(s("models"), Yaml::Sequence(models));
     Yaml::Mapping(prov)
@@ -223,6 +278,29 @@ pub fn summary_from_docs(models: &Mapping, cfg: &Mapping) -> HashMap<String, Opt
             .map(|list| list.len().to_string())
             .unwrap_or_else(|| "0".into());
         out.insert("models".into(), Some(count));
+        if let Some(sel) = default_selector {
+            // `provider/model:level` — surface the bare model id plus the
+            // reasoning level separately so the UI never parses selectors.
+            if let Some((_, tail)) = sel.split_once('/') {
+                let (mid, level) = tail.rsplit_once(':').unwrap_or((tail, ""));
+                out.insert("model".into(), Some(mid.into()));
+                if !level.is_empty() {
+                    out.insert("reasoning_level".into(), Some(level.into()));
+                }
+                if let Some(levels) = get_mapping(prov, "modelOverrides")
+                    .and_then(|o| o.get(&s(mid)))
+                    .and_then(Yaml::as_mapping)
+                    .and_then(|entry| entry.get(&s("thinking")))
+                    .and_then(|t| t.get(&s("levels")))
+                    .and_then(Yaml::as_sequence)
+                {
+                    let list: Vec<&str> = levels.iter().filter_map(Yaml::as_str).collect();
+                    if !list.is_empty() {
+                        out.insert("reasoning_levels".into(), Some(list.join(",")));
+                    }
+                }
+            }
+        }
     }
     if let Some(sel) = default_selector {
         out.insert("default_model".into(), Some(sel.into()));
@@ -295,8 +373,14 @@ pub fn apply(
     let mut root = read_yaml(&models_p)?;
     {
         let providers = ensure_mapping(&mut root, "providers")?;
-        let entry =
-            build_provider(site, api_key, &base_url, build_model_list(options, model_id));
+        let entry = build_provider(
+            site,
+            api_key,
+            &base_url,
+            build_model_list(options, model_id),
+            options,
+            model_id,
+        );
         providers.insert(s(&provider_id), entry);
     }
     if let Err(e) = write_yaml(&models_p, &root, false) {
@@ -305,7 +389,16 @@ pub fn apply(
     }
 
     // ---- config.yml modelRoles.default ----
-    let selector = format!("{provider_id}/{}", model_id.trim());
+    // The `:level` suffix sets omp's default thinking level for the model.
+    let mut selector = format!("{provider_id}/{}", model_id.trim());
+    if let Some(level) = options
+        .reasoning_level
+        .as_deref()
+        .and_then(sanitize_level)
+    {
+        selector.push(':');
+        selector.push_str(&level);
+    }
     let mut cfg = read_yaml(&config_p)?;
     {
         let roles = ensure_mapping(&mut cfg, "modelRoles")?;
@@ -347,6 +440,13 @@ pub fn apply(
     expected.insert("api".into(), api_for_protocol(&site.protocol).into());
     expected.insert("model".into(), model_id.trim().to_string());
     expected.insert("default_model".into(), selector.clone());
+    let applied_levels = sanitize_levels(&options.reasoning_levels);
+    if !applied_levels.is_empty() {
+        expected.insert("reasoning_levels".into(), applied_levels.join(","));
+    }
+    if let Some(level) = options.reasoning_level.as_deref().and_then(sanitize_level) {
+        expected.insert("reasoning_level".into(), level);
+    }
 
     let binding = TargetBinding {
         target: TargetKind::Omp,
@@ -716,6 +816,8 @@ mod tests {
         let opts = OmpApplyOptions {
             write_all_models: false,
             catalog_models: vec![],
+            reasoning_levels: vec![],
+            reasoning_level: None,
         };
         let out = apply(
             &site,
@@ -761,6 +863,99 @@ mod tests {
     }
 
     #[test]
+    fn openai_native_protocol_uses_responses_api() {
+        let (_d, home) = temp_home("h-native");
+        let site = sample_site(SiteProtocol::OpenaiNative);
+        apply(
+            &site,
+            "sk-a",
+            "m1",
+            &OmpApplyOptions::default(),
+            override_of(&home),
+            &home.join("bk"),
+        )
+        .unwrap();
+        let models = read_yaml(&models_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
+        let prov = get_mapping(&models, "providers").unwrap().values().next().unwrap().as_mapping().unwrap();
+        assert_eq!(get_str(prov, "api"), Some("openai-responses"));
+    }
+
+    #[test]
+    fn apply_writes_thinking_levels_and_default_suffix() {
+        let (_d, home) = temp_home("h-reasoning");
+        let site = sample_site(SiteProtocol::OpenaiCompatible);
+        let opts = OmpApplyOptions {
+            write_all_models: false,
+            catalog_models: vec![],
+            reasoning_levels: vec![
+                "off".into(),
+                "HIGH".into(),
+                "max".into(),
+                "bogus".into(),
+            ],
+            reasoning_level: Some("max".into()),
+        };
+        let out = apply(&site, "sk", "glm-5.3", &opts, override_of(&home), &home.join("bk"))
+            .unwrap();
+        let pid = out.binding.provider_id.clone().unwrap();
+
+        let models = read_yaml(&models_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
+        let prov = get_mapping(&models, "providers")
+            .unwrap()
+            .get(&s(&pid))
+            .and_then(Yaml::as_mapping)
+            .unwrap();
+        let entry = get_mapping(prov, "modelOverrides")
+            .unwrap()
+            .get(&s("glm-5.3"))
+            .and_then(Yaml::as_mapping)
+            .unwrap();
+        assert_eq!(entry.get(&s("reasoning")), Some(&Yaml::Bool(true)));
+        let compat = get_mapping(entry, "compat").unwrap();
+        assert_eq!(
+            compat.get(&s("supportsReasoningEffort")),
+            Some(&Yaml::Bool(true))
+        );
+        let levels = get_mapping(entry, "thinking")
+            .unwrap()
+            .get(&s("levels"))
+            .and_then(Yaml::as_sequence)
+            .unwrap()
+            .iter()
+            .filter_map(Yaml::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(levels, vec!["off", "high", "max"]);
+
+        let cfg = read_yaml(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
+        let sel = format!("{pid}/glm-5.3:max");
+        assert_eq!(
+            get_str(get_mapping(&cfg, "modelRoles").unwrap(), "default"),
+            Some(sel.as_str())
+        );
+
+        // Summary surfaces the bare model plus the reasoning level.
+        let summary = out.live_summary;
+        assert_eq!(summary.get("model").and_then(|v| v.as_deref()), Some("glm-5.3"));
+        assert_eq!(
+            summary.get("reasoning_level").and_then(|v| v.as_deref()),
+            Some("max")
+        );
+        assert_eq!(
+            summary.get("reasoning_levels").and_then(|v| v.as_deref()),
+            Some("off,high,max")
+        );
+
+        let (status, reason) = detect_status(
+            Some(&out.binding),
+            Some(&site),
+            Some("sk"),
+            override_of(&home),
+        )
+        .unwrap();
+        assert_eq!(status, ApplyStatus::Applied, "{reason:?}");
+    }
+
+    #[test]
     fn anthropic_protocol_adds_relay_flags() {
         let (_d, home) = temp_home("h2");
         let site = sample_site(SiteProtocol::Anthropic);
@@ -791,6 +986,8 @@ mod tests {
         let site = sample_site(SiteProtocol::OpenaiCompatible);
         let opts = OmpApplyOptions {
             write_all_models: true,
+            reasoning_levels: vec![],
+            reasoning_level: None,
             catalog_models: vec![
                 ("m1".into(), "Model One".into()),
                 ("m2".into(), String::new()),
@@ -1059,6 +1256,8 @@ mod live_e2e_tests {
         let opts = OmpApplyOptions {
             write_all_models: false,
             catalog_models: vec![],
+            reasoning_levels: vec![],
+            reasoning_level: None,
         };
         let bk = home.join("bk-e2e");
 

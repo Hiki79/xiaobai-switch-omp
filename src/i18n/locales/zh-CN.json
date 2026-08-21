@@ -136,7 +136,8 @@
     "deepLinkSecurityHint": "请确认来源可信后再导入以免密钥残留在浏览器历史中",
     "advanced": "高级配置",
     "codexPrivateCapabilities": "Codex私有能力",
-    "deepLinkCapabilitiesOff": "全部关闭"
+    "deepLinkCapabilitiesOff": "全部关闭",
+    "protocolOpenaiNative": "OpenAI 原生（Responses）"
   },
   "apply": {
     "title": "应用中心",
@@ -244,6 +245,9 @@
     "zcodeReasoningVariants": "可用等级",
     "zcodeReasoningVariantsPlaceholder": "输入等级后回车，例如 low、high、max",
     "zcodeReasoningVariantsHint": "已应用模型优先读取 ZCode 配置；可在这里增删模型实际支持的等级。",
+    "groupOmpReasoning": "omp 思考等级",
+    "ompReasoningLevel": "默认思考等级",
+    "ompReasoningHint": "按所选模型写入 omp thinking levels；默认等级通过 modelRoles 的 :level 后缀生效。",
     "groupCodexCapabilities": "平台能力",
     "remoteCompaction": "远程压缩",
     "remoteCompactionHint": "长会话把压缩请求发给当前站点。多数中转不支持，请保持关闭。开启后会把该 provider 显示名写成 OpenAI（Codex 据此判断能否走远程压缩）；关闭则恢复站点名称。",

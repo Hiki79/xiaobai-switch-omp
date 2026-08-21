@@ -20,6 +20,9 @@ pub fn parse_deep_link_protocol(value: Option<&str>) -> AppResult<SiteProtocol> 
         None => Ok(SiteProtocol::OpenaiCompatible),
         Some(raw) => match raw.to_ascii_lowercase().as_str() {
             "openai" | "openai_compatible" => Ok(SiteProtocol::OpenaiCompatible),
+            "openai_native" | "openai-native" | "openai_responses" => {
+                Ok(SiteProtocol::OpenaiNative)
+            }
             "anthropic" => Ok(SiteProtocol::Anthropic),
             other => Err(AppError::new(
                 "validation_failed",

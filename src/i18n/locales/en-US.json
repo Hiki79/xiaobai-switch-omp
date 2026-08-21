@@ -136,7 +136,8 @@
     "deepLinkSecurityHint": "Only import trusted links to avoid leaving keys in browser history",
     "advanced": "Advanced configuration",
     "codexPrivateCapabilities": "Codex-specific capabilities",
-    "deepLinkCapabilitiesOff": "All off"
+    "deepLinkCapabilitiesOff": "All off",
+    "protocolOpenaiNative": "OpenAI native (Responses)"
   },
   "apply": {
     "title": "Apply Center",
@@ -244,6 +245,9 @@
     "zcodeReasoningVariants": "Available levels",
     "zcodeReasoningVariantsPlaceholder": "Enter levels and press Enter, e.g. low, high, max",
     "zcodeReasoningVariantsHint": "Applied models start from ZCode's configured variants; edit this list to match the model.",
+    "groupOmpReasoning": "omp thinking levels",
+    "ompReasoningLevel": "Default thinking level",
+    "ompReasoningHint": "Writes omp thinking levels for the selected model; the default applies via the modelRoles :level suffix.",
     "groupCodexCapabilities": "Provider capabilities",
     "remoteCompaction": "Remote compaction",
     "remoteCompactionHint": "Send long-session compaction to the current site. Most relays do not support this — leave it off. When on, the provider display name is written as OpenAI (the condition Codex uses to allow remote compaction); when off, the site name is restored.",

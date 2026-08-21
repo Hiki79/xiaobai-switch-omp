@@ -21,7 +21,13 @@ const CODEX_EFFORTS = new Set<CodexReasoningEffort>([
   "medium",
   "high",
   "xhigh",
+  "max",
 ]);
+
+/** Effort ladder omp understands on `:level` suffixes and thinking.levels. */
+const OMP_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+const DEFAULT_FAMILY_LEVELS = ["low", "medium", "high", "max"];
 
 export function selectableApplySites<T extends { enabled: boolean }>(sites: T[]): T[] {
   return sites.filter((s) => s.enabled);
@@ -191,6 +197,8 @@ export function hydrateCodexForm(
 export interface OmpFormDefaults {
   modelId: string | undefined;
   writeAllModels: boolean;
+  reasoningLevels: string[];
+  reasoningLevel: string | undefined;
 }
 
 export interface ZcodeFormDefaults {
@@ -199,6 +207,8 @@ export interface ZcodeFormDefaults {
   reasoningLevel: string | undefined;
 }
 
+/** Model-family reasoning ladders shared by every target; each target keeps
+ * only the levels its CLI actually accepts. */
 const ZCODE_MODEL_LEVELS: Array<{ matches: RegExp; levels: string[] }> = [
   { matches: /glm[-_ ]?5\.3/i, levels: ["low", "max", "high"] },
   { matches: /glm[-_ ]?5\.2/i, levels: ["nothink", "high", "max"] },
@@ -279,6 +289,49 @@ export function zcodeReasoningLevelsForModel(
   return family?.levels ?? ["low", "medium", "high", "max"];
 }
 
+function familyLevelsForModel(modelId: string | undefined): string[] {
+  const family = ZCODE_MODEL_LEVELS.find((entry) => entry.matches.test(modelId ?? ""));
+  return family?.levels ?? DEFAULT_FAMILY_LEVELS;
+}
+
+function intersectLevels<T extends string>(modelId: string | undefined, allowed: readonly T[]): T[] {
+  const levels = familyLevelsForModel(modelId).filter((v): v is T =>
+    (allowed as readonly string[]).includes(v),
+  );
+  return levels.length > 0 ? levels : [...allowed];
+}
+
+/** Codex model_reasoning_effort options for the selected model. */
+export function codexReasoningLevelsForModel(modelId: string | undefined): CodexReasoningEffort[] {
+  return intersectLevels(modelId, [...CODEX_EFFORTS]);
+}
+
+/** Claude Code effort options for the selected model. */
+export function claudeEffortLevelsForModel(modelId: string | undefined): ClaudeEffortLevel[] {
+  return intersectLevels(modelId, [...CLAUDE_EFFORTS]);
+}
+
+/** omp thinking.levels options for the selected model. */
+export function ompReasoningLevelsForModel(modelId: string | undefined): string[] {
+  return intersectLevels(modelId, OMP_EFFORTS);
+}
+
+const PREFERRED_DEFAULT_LEVELS = ["max", "xhigh", "high", "medium", "low", "minimal", "off"];
+
+/** Sensible default level: strongest the model family supports. */
+export function defaultReasoningLevel<T extends string>(
+  levels: T[],
+  current?: string,
+): T | undefined {
+  const asStrings = levels as string[];
+  if (current) {
+    const match = asStrings.find((level) => level === current);
+    if (match !== undefined) return match as T;
+  }
+  const preferred = PREFERRED_DEFAULT_LEVELS.find((level) => asStrings.includes(level));
+  return preferred !== undefined ? (preferred as T) : levels[0];
+}
+
 function preferredZcodeLevel(levels: string[], preferred?: string): string | undefined {
   if (preferred && levels.includes(preferred)) return preferred;
   return levels.find((value) => value.toLowerCase() === "max") ?? levels[0];
@@ -319,17 +372,32 @@ export function hydrateOmpForm(
 ): OmpFormDefaults {
   const live = status?.liveSummary;
   const onSite = appliedOnSite(site, status);
-  // omp stores the default as a "<provider>/<model>" selector; keep the id part.
+  // omp stores the default as a "<provider>/<model>[:level]" selector; the
+  // adapter also surfaces the bare model id separately.
   const selector = liveStr(live, "default_model");
-  const liveModel = selector?.includes("/")
-    ? selector.slice(selector.indexOf("/") + 1)
-    : (selector ?? undefined);
+  const liveModel =
+    liveStr(live, "model") ??
+    (selector?.includes("/")
+      ? selector.slice(selector.indexOf("/") + 1)
+      : selector)?.split(":")[0];
   const count = Number(liveStr(live, "models") ?? "1");
+  const modelId = onSite
+    ? (liveModel ?? site?.selectedModelId ?? undefined)
+    : (site?.selectedModelId ?? undefined);
+  const liveLevels = (liveStr(live, "reasoning_levels") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => (OMP_EFFORTS as readonly string[]).includes(value));
+  const reasoningLevels =
+    onSite && liveLevels.length > 0 ? liveLevels : ompReasoningLevelsForModel(modelId);
   return {
-    modelId: onSite
-      ? (liveModel ?? site?.selectedModelId ?? undefined)
-      : (site?.selectedModelId ?? undefined),
+    modelId,
     writeAllModels: onSite && Number.isFinite(count) && count > 1,
+    reasoningLevels,
+    reasoningLevel: defaultReasoningLevel(
+      reasoningLevels,
+      onSite ? liveStr(live, "reasoning_level") : undefined,
+    ),
   };
 }
 

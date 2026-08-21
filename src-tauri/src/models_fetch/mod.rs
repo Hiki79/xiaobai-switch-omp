@@ -38,7 +38,8 @@ pub async fn fetch_models(
 
     let start = Instant::now();
     let (endpoint, models) = match site.protocol {
-        SiteProtocol::OpenaiCompatible => {
+        // OpenAI-native endpoints expose the same GET /v1/models listing.
+        SiteProtocol::OpenaiCompatible | SiteProtocol::OpenaiNative => {
             let endpoint = preview.models_url.clone();
             let resp = client.get(&endpoint).bearer_auth(api_key).send().await?;
             let status = resp.status();

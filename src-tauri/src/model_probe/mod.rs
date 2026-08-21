@@ -15,6 +15,9 @@ pub fn probe_endpoint(protocol: &SiteProtocol, preview: &UrlWritePreview) -> Str
         SiteProtocol::OpenaiCompatible => {
             format!("{}/chat/completions", preview.codex_base_url)
         }
+        SiteProtocol::OpenaiNative => {
+            format!("{}/responses", preview.codex_base_url)
+        }
         SiteProtocol::Anthropic => {
             if preview.claude_base_url.to_ascii_lowercase().ends_with("/v1") {
                 format!("{}/messages", preview.claude_base_url)
@@ -33,6 +36,11 @@ pub fn probe_body(protocol: &SiteProtocol, model_id: &str) -> Value {
             "max_tokens": PROBE_MAX_TOKENS,
             "stream": false
         }),
+        SiteProtocol::OpenaiNative => json!({
+            "model": model_id,
+            "input": PROBE_USER_TEXT,
+            "max_output_tokens": PROBE_MAX_TOKENS
+        }),
         SiteProtocol::Anthropic => json!({
             "model": model_id,
             "max_tokens": PROBE_MAX_TOKENS,
@@ -47,7 +55,7 @@ pub fn apply_headers(
     api_key: &str,
 ) -> reqwest::RequestBuilder {
     match protocol {
-        SiteProtocol::OpenaiCompatible => req.bearer_auth(api_key),
+        SiteProtocol::OpenaiCompatible | SiteProtocol::OpenaiNative => req.bearer_auth(api_key),
         SiteProtocol::Anthropic => req
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01"),
@@ -152,6 +160,10 @@ fn response_ok(protocol: &SiteProtocol, value: &Value) -> bool {
             .get("choices")
             .and_then(Value::as_array)
             .is_some_and(|choices| !choices.is_empty()),
+        SiteProtocol::OpenaiNative => value
+            .get("output")
+            .and_then(Value::as_array)
+            .is_some_and(|output| !output.is_empty()),
         SiteProtocol::Anthropic => {
             value.get("type").and_then(Value::as_str) == Some("message")
                 || value.get("content").is_some_and(Value::is_array)

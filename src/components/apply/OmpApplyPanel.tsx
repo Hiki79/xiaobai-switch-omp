@@ -7,7 +7,12 @@ import { ApplyFooter } from "./ApplyFooter";
 import { SiteSelect } from "./SiteSelect";
 import { TargetStatusCard, statusFor, toolFor } from "./TargetStatusCard";
 import { useApplySiteSelection } from "./useApplySiteSelection";
-import { buildModelOptions, hydrateOmpForm } from "./hydrateApplyForm";
+import {
+  buildModelOptions,
+  defaultReasoningLevel,
+  hydrateOmpForm,
+  ompReasoningLevelsForModel,
+} from "./hydrateApplyForm";
 import { showApplyException, showApplyOutcome } from "./showApplyOutcome";
 
 const rowStyle: React.CSSProperties = { padding: "4px 0" };
@@ -37,6 +42,8 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
 
   const [modelId, setModelId] = useState<string | undefined>();
   const [writeAllModels, setWriteAllModels] = useState(false);
+  const [reasoningLevels, setReasoningLevels] = useState<string[]>([]);
+  const [reasoningLevel, setReasoningLevel] = useState<string | undefined>();
 
   const models = siteId ? (modelsBySite[siteId] ?? []) : [];
   const modelsLoading = siteId ? Boolean(modelsLoadingBySite[siteId]) : false;
@@ -52,6 +59,8 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
       lastHydrate.current = null;
       setModelId(undefined);
       setWriteAllModels(false);
+      setReasoningLevels([]);
+      setReasoningLevel(undefined);
       return;
     }
     const stamp = status?.lastAppliedAt ?? null;
@@ -60,6 +69,8 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
     const defaults = hydrateOmpForm(site, status);
     setModelId(defaults.modelId);
     setWriteAllModels(defaults.writeAllModels);
+    setReasoningLevels(defaults.reasoningLevels);
+    setReasoningLevel(defaults.reasoningLevel);
     lastHydrate.current = { siteId: site.id, stamp };
   }, [site, status]);
 
@@ -67,6 +78,13 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
     () => buildModelOptions(models, [modelId]),
     [models, modelId],
   );
+
+  const handleModelChange = (nextModelId: string) => {
+    setModelId(nextModelId);
+    const levels = ompReasoningLevelsForModel(nextModelId);
+    setReasoningLevels(levels);
+    setReasoningLevel((current) => defaultReasoningLevel(levels, current));
+  };
 
   const handleApply = async () => {
     if (!site) {
@@ -86,6 +104,8 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
         targets: ["omp"],
         modelId,
         ompWriteAllModels: writeAllModels,
+        ompReasoningLevels: reasoningLevels,
+        ompReasoningLevel: reasoningLevel ?? null,
       });
       showApplyOutcome(
         modal,
@@ -143,7 +163,7 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
                     value={modelId}
                     placeholder={t("sites.selectModel")}
                     options={modelOptions}
-                    onChange={setModelId}
+                    onChange={handleModelChange}
                     showSearch
                     optionFilterProp="label"
                     disabled={!site}
@@ -158,6 +178,7 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
         </SettingsGroup>
 
         {site && (
+          <>
           <SettingsGroup title={t("apply.groupOmpModels")}>
             <div style={rowStyle} className="flex items-center justify-between gap-4">
               <div>
@@ -179,6 +200,23 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
               </>
             )}
           </SettingsGroup>
+
+          <SettingsGroup title={t("apply.groupOmpReasoning")}>
+            <div style={rowStyle} className="flex items-center justify-between gap-4">
+              <div>
+                <div>{t("apply.ompReasoningLevel")}</div>
+                <div className="text-xs opacity-50">{t("apply.ompReasoningHint")}</div>
+              </div>
+              <Select
+                style={{ minWidth: 160 }}
+                value={reasoningLevel}
+                onChange={setReasoningLevel}
+                disabled={reasoningLevels.length === 0}
+                options={reasoningLevels.map((level) => ({ value: level, label: level }))}
+              />
+            </div>
+          </SettingsGroup>
+          </>
         )}
       </div>
 
