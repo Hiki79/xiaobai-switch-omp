@@ -8,6 +8,8 @@
 
 # XiaoBaiSwitch
 
+官网：[https://xiaobaiswitch.com](https://xiaobaiswitch.com)
+
 小白也能上手的，以站点驱动的 Claude Code / Codex 上游配置桌面应用。
 
 以「上游站点」为中心：填好 Base URL 与 API Key，拉取或手输模型，再一键应用到 Claude Code 或 Codex。

@@ -8,6 +8,8 @@
 
 # XiaoBaiSwitch
 
+Website: [https://xiaobaiswitch.com](https://xiaobaiswitch.com)
+
 A beginner-friendly, site-driven desktop app for wiring Claude Code and Codex to an upstream API.
 
 Everything starts from an upstream site: enter a Base URL and API key, fetch or type model ids, then apply to Claude Code or Codex in one click.
