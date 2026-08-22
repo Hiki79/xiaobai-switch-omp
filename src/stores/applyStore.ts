@@ -99,6 +99,7 @@ export const useApplyStore = create<ApplyState>((set, get) => ({
         claudeEffortLevel: req.claudeEffortLevel ?? null,
         codexWriteAllModels: req.codexWriteAllModels ?? false,
         codexReasoningEffort: req.codexReasoningEffort ?? null,
+        codexReasoningLevels: req.codexReasoningLevels ?? null,
         codexRemoteCompaction: req.codexRemoteCompaction ?? false,
         codexImageUnderstanding: req.codexImageUnderstanding ?? false,
         codexImageGeneration: req.codexImageGeneration ?? false,
@@ -107,8 +108,10 @@ export const useApplyStore = create<ApplyState>((set, get) => ({
         ompWriteAllModels: req.ompWriteAllModels ?? false,
         ompReasoningLevels: req.ompReasoningLevels ?? null,
         ompReasoningLevel: req.ompReasoningLevel ?? null,
+        zcodeWriteAllModels: req.zcodeWriteAllModels ?? false,
         zcodeReasoningLevels: req.zcodeReasoningLevels ?? null,
         zcodeReasoningLevel: req.zcodeReasoningLevel ?? null,
+        catalogModelIds: req.catalogModelIds ?? null,
       });
       set({ lastResult: result });
       await get().loadStatus({ force: true });

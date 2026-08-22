@@ -1,17 +1,23 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, App, Select, Space, Switch, Divider, Skeleton } from "antd";
+import { Alert, App, Select, Space, Skeleton } from "antd";
 import { useTranslation } from "react-i18next";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { useApplyStore, useSiteStore } from "@/stores";
 import { ApplyFooter } from "./ApplyFooter";
+import { ModelCatalogSection } from "./ModelCatalogSection";
+import { ReasoningLevelFields } from "./ReasoningLevelFields";
 import { SiteSelect } from "./SiteSelect";
 import { TargetStatusCard, statusFor, toolFor } from "./TargetStatusCard";
 import { useApplySiteSelection } from "./useApplySiteSelection";
+import { useCatalogSelection } from "./useCatalogSelection";
 import {
   buildModelOptions,
   defaultReasoningLevel,
+  hydrateCatalogSelection,
   hydrateOmpForm,
+  OMP_EFFORTS,
   ompReasoningLevelsForModel,
+  parseLiveModelIds,
 } from "./hydrateApplyForm";
 import { showApplyException, showApplyOutcome } from "./showApplyOutcome";
 
@@ -40,20 +46,21 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
     status?.appliedSiteId,
   );
 
+  const models = siteId ? (modelsBySite[siteId] ?? []) : [];
+  const modelsLoading = siteId ? Boolean(modelsLoadingBySite[siteId]) : false;
+
   const [modelId, setModelId] = useState<string | undefined>();
   const [writeAllModels, setWriteAllModels] = useState(false);
   const [reasoningLevels, setReasoningLevels] = useState<string[]>([]);
   const [reasoningLevel, setReasoningLevel] = useState<string | undefined>();
-
-  const models = siteId ? (modelsBySite[siteId] ?? []) : [];
-  const modelsLoading = siteId ? Boolean(modelsLoadingBySite[siteId]) : false;
+  const { catalogIds, setCatalogIds } = useCatalogSelection(models);
 
   useEffect(() => {
     if (!siteId) return;
     void listModels(siteId).catch(() => null);
   }, [siteId, listModels]);
 
-  const lastHydrate = useRef<{ siteId: string; stamp: number | null } | null>(null);
+  const lastHydrate = useRef<{ siteId: string; stamp: number | null; modelCount: number } | null>(null);
   useEffect(() => {
     if (!site) {
       lastHydrate.current = null;
@@ -61,18 +68,23 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
       setWriteAllModels(false);
       setReasoningLevels([]);
       setReasoningLevel(undefined);
+      setCatalogIds(null);
       return;
     }
     const stamp = status?.lastAppliedAt ?? null;
     const prev = lastHydrate.current;
-    if (prev && prev.siteId === site.id && prev.stamp === stamp) return;
+    if (prev && prev.siteId === site.id && prev.stamp === stamp && prev.modelCount === models.length) return;
     const defaults = hydrateOmpForm(site, status);
     setModelId(defaults.modelId);
     setWriteAllModels(defaults.writeAllModels);
     setReasoningLevels(defaults.reasoningLevels);
     setReasoningLevel(defaults.reasoningLevel);
-    lastHydrate.current = { siteId: site.id, stamp };
-  }, [site, status]);
+    const liveIds = defaults.writeAllModels ? parseLiveModelIds(status?.liveSummary) : [];
+    setCatalogIds(
+      liveIds.length > 0 && models.length > 0 ? hydrateCatalogSelection(models, liveIds) : null,
+    );
+    lastHydrate.current = { siteId: site.id, stamp, modelCount: models.length };
+  }, [site, status, models, setCatalogIds]);
 
   const modelOptions = useMemo(
     () => buildModelOptions(models, [modelId]),
@@ -104,6 +116,7 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
         targets: ["omp"],
         modelId,
         ompWriteAllModels: writeAllModels,
+        catalogModelIds: writeAllModels ? catalogIds : null,
         ompReasoningLevels: reasoningLevels,
         ompReasoningLevel: reasoningLevel ?? null,
       });
@@ -180,41 +193,30 @@ export const OmpApplyPanel = memo(function OmpApplyPanel() {
         {site && (
           <>
           <SettingsGroup title={t("apply.groupOmpModels")}>
-            <div style={rowStyle} className="flex items-center justify-between gap-4">
-              <div>
-                <div>{t("apply.ompWriteAllModels")}</div>
-                <div className="text-xs opacity-50">{t("apply.ompWriteAllModelsHint")}</div>
-              </div>
-              <Switch checked={writeAllModels} onChange={setWriteAllModels} />
-            </div>
-            {writeAllModels && (
-              <>
-                <Divider style={{ margin: "8px 0" }} />
-                <div className="text-xs opacity-60">
-                  {modelsLoading && models.length === 0 ? (
-                    <Skeleton.Input active size="small" style={{ width: 160 }} />
-                  ) : (
-                    t("apply.catalogModelCount", { count: models.length || (modelId ? 1 : 0) })
-                  )}
-                </div>
-              </>
-            )}
+            <ModelCatalogSection
+              title={t("apply.ompWriteAllModels")}
+              hint={t("apply.ompWriteAllModelsHint")}
+              models={models}
+              loading={modelsLoading}
+              writeAll={writeAllModels}
+              onWriteAllChange={setWriteAllModels}
+              selectedIds={catalogIds}
+              onSelectedIdsChange={setCatalogIds}
+              defaultModelId={modelId}
+            />
           </SettingsGroup>
 
           <SettingsGroup title={t("apply.groupOmpReasoning")}>
-            <div style={rowStyle} className="flex items-center justify-between gap-4">
-              <div>
-                <div>{t("apply.ompReasoningLevel")}</div>
-                <div className="text-xs opacity-50">{t("apply.ompReasoningHint")}</div>
-              </div>
-              <Select
-                style={{ minWidth: 160 }}
-                value={reasoningLevel}
-                onChange={setReasoningLevel}
-                disabled={reasoningLevels.length === 0}
-                options={reasoningLevels.map((level) => ({ value: level, label: level }))}
-              />
-            </div>
+            <ReasoningLevelFields
+              levels={reasoningLevels}
+              onLevelsChange={setReasoningLevels}
+              defaultLevel={reasoningLevel}
+              onDefaultLevelChange={setReasoningLevel}
+              allowed={OMP_EFFORTS}
+              defaultLabel={t("apply.ompReasoningLevel")}
+              defaultHint={t("apply.ompReasoningHint")}
+              variantsHint={t("apply.ompReasoningVariantsHint")}
+            />
           </SettingsGroup>
           </>
         )}

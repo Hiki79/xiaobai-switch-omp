@@ -25,11 +25,14 @@ pub struct CodexHydration {
     pub model_id: Option<String>,
     pub write_all_models: bool,
     pub reasoning: Option<CodexReasoningEffort>,
+    pub reasoning_levels: Vec<String>,
     pub remote_compaction: bool,
     pub image_understanding: bool,
     pub image_generation: bool,
     pub web_search: bool,
     pub capability_source: CapabilitySource,
+    /// Models the last UI apply narrowed the catalog to; None = every model.
+    pub model_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -48,6 +51,18 @@ fn live_str(summary: &HashMap<String, Option<String>>, keys: &[&str]) -> Option<
         }
     }
     None
+}
+
+/// Model ids a target currently has written (`model_ids` live summary key).
+fn live_model_ids(summary: Option<&HashMap<String, Option<String>>>) -> Option<Vec<String>> {
+    let raw = live_str(summary?, &["model_ids"])?;
+    let ids: Vec<String> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    (!ids.is_empty()).then_some(ids)
 }
 
 fn applied_on_site(site_id: &str, status: Option<&TargetLiveStatus>) -> bool {
@@ -159,11 +174,22 @@ pub fn hydrate_codex(site: &SiteRow, status: Option<&TargetLiveStatus>) -> Codex
             .and_then(|s| live_str(s, &["model_reasoning_effort"]))
             .as_deref()
             .and_then(CodexReasoningEffort::parse),
+        reasoning_levels: live
+            .and_then(|s| live_str(s, &["reasoning_levels"]))
+            .map(|v| {
+                v.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default(),
         remote_compaction,
         image_understanding,
         image_generation,
         web_search,
         capability_source,
+        model_ids: live_model_ids(live),
     }
 }
 
@@ -173,13 +199,18 @@ pub struct OmpHydration {
     pub write_all_models: bool,
     pub reasoning_levels: Vec<String>,
     pub reasoning_level: Option<String>,
+    /// Models the last UI apply narrowed the catalog to; None = every model.
+    pub model_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZcodeHydration {
     pub model_id: Option<String>,
+    pub write_all_models: bool,
     pub reasoning_levels: Vec<String>,
     pub reasoning_level: Option<String>,
+    /// Models the last UI apply narrowed the catalog to; None = every model.
+    pub model_ids: Option<Vec<String>>,
 }
 
 pub fn hydrate_zcode(site: &SiteRow, status: Option<&TargetLiveStatus>) -> ZcodeHydration {
@@ -202,18 +233,24 @@ pub fn hydrate_zcode(site: &SiteRow, status: Option<&TargetLiveStatus>) -> Zcode
     } else {
         Vec::new()
     };
+    let write_all = live
+        .and_then(|s| live_str(s, &["models"]))
+        .and_then(|v| v.parse::<usize>().ok())
+        .is_some_and(|n| n > 1);
     ZcodeHydration {
         model_id: if on_site {
             live_model.or_else(|| site.selected_model_id.clone())
         } else {
             site.selected_model_id.clone()
         },
+        write_all_models: write_all,
         reasoning_levels: levels,
         reasoning_level: if on_site {
             live.and_then(|s| live_str(s, &["reasoning_default"]))
         } else {
             None
         },
+        model_ids: if write_all { live_model_ids(live) } else { None },
     }
 }
 
@@ -301,6 +338,7 @@ pub fn hydrate_omp(site: &SiteRow, status: Option<&TargetLiveStatus>) -> OmpHydr
         write_all_models: on_site && write_all,
         reasoning_levels,
         reasoning_level,
+        model_ids: if on_site && write_all { live_model_ids(live) } else { None },
     }
 }
 
@@ -351,6 +389,9 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     None,
                     None,
+                    None,
+                    None,
+                    None,
                 )?;
                 results.extend(applied.results);
             }
@@ -373,6 +414,7 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     Some(h.write_all_models),
                     h.reasoning.map(|e| e.as_str().into()),
+                    (!h.reasoning_levels.is_empty()).then(|| h.reasoning_levels.clone()),
                     Some(h.remote_compaction),
                     Some(h.image_understanding),
                     Some(h.image_generation),
@@ -383,6 +425,8 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     None,
                     None,
+                    None,
+                    h.model_ids.clone(),
                 )?;
                 results.extend(applied.results);
             }
@@ -410,11 +454,14 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     None,
                     None,
+                    None,
                     Some(h.write_all_models),
                     Some(h.reasoning_levels),
                     h.reasoning_level,
                     None,
                     None,
+                    None,
+                    h.model_ids.clone(),
                 )?;
                 results.extend(applied.results);
             }
@@ -445,8 +492,11 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     None,
                     None,
+                    None,
+                    Some(h.write_all_models),
                     Some(h.reasoning_levels),
                     h.reasoning_level,
+                    h.model_ids.clone(),
                 )?;
                 results.extend(applied.results);
             }

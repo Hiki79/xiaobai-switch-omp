@@ -209,6 +209,13 @@ fn live_for_provider(root: &Value, provider_id: &str) -> HashMap<String, Option<
     if let Some(key) = provider_string(provider, "apiKey") {
         out.insert("api_key".into(), Some(key_prefix(key)));
     }
+    if let Some(models) = provider.get("models").and_then(Value::as_object) {
+        out.insert("models".into(), Some(models.len().to_string()));
+        let ids: Vec<&str> = models.keys().map(String::as_str).collect();
+        if !ids.is_empty() {
+            out.insert("model_ids".into(), Some(ids.join(",")));
+        }
+    }
     add_reasoning_models_summary(&mut out, provider);
     if let Some(model_ref) = root.get("model").and_then(Value::as_str) {
         out.insert("model".into(), Some(model_ref.into()));
@@ -342,6 +349,17 @@ pub fn apply(
         .or_insert_with(|| Value::Object(Map::new()))
         .as_object_mut()
         .ok_or_else(|| AppError::new("invalid_config", "ZCode provider models must be an object"))?;
+    // Mirror omp semantics: the managed provider only keeps what this apply
+    // asked for, so pruning follows both the toggle and the checked catalog.
+    let catalog_ids: Vec<&str> = options
+        .catalog_models
+        .iter()
+        .map(|(id, _)| id.trim())
+        .filter(|id| !id.is_empty())
+        .collect();
+    models.retain(|id, _| {
+        id == model_id || (options.write_all_models && catalog_ids.contains(&id.as_str()))
+    });
     let model = models
         .entry(model_id.to_string())
         .or_insert_with(|| json!({}));
@@ -365,6 +383,47 @@ pub fn apply(
         .as_object_mut()
         .ok_or_else(|| AppError::new("invalid_config", "ZCode model metadata must be an object"))?;
     zcode.insert("modified".into(), Value::Bool(true));
+
+    // Extra catalog models: variants follow each model's family (or whatever
+    // ZCode already has configured for it); the form's ladder only governs the
+    // default model above.
+    for (extra_id, extra_name) in &options.catalog_models {
+        let extra_id = extra_id.trim();
+        if extra_id.is_empty() || extra_id == model_id {
+            continue;
+        }
+        let previous = models.get(extra_id).cloned();
+        let extra_levels = normalize_levels(extra_id, &[], previous.as_ref());
+        let extra_level = choose_level(&extra_levels, None, existing_default(previous.as_ref()));
+        let entry = models
+            .entry(extra_id.to_string())
+            .or_insert_with(|| json!({}));
+        let entry_obj = entry
+            .as_object_mut()
+            .ok_or_else(|| AppError::new("invalid_config", "ZCode model entry must be an object"))?;
+        let fallback_name = if extra_name.trim().is_empty() || extra_name.trim() == extra_id {
+            extra_id
+        } else {
+            extra_name.trim()
+        };
+        entry_obj
+            .entry("name")
+            .or_insert_with(|| Value::String(fallback_name.into()));
+        entry_obj.insert(
+            "reasoning".into(),
+            json!({
+                "enabled": true,
+                "variants": extra_levels,
+                "defaultVariant": extra_level,
+            }),
+        );
+        let entry_zcode = entry_obj
+            .entry("zcode")
+            .or_insert_with(|| Value::Object(Map::new()))
+            .as_object_mut()
+            .ok_or_else(|| AppError::new("invalid_config", "ZCode model metadata must be an object"))?;
+        entry_zcode.insert("modified".into(), Value::Bool(true));
+    }
 
     let model_ref = format!("{provider_id}/{model_id}");
     root_obj.insert("model".into(), Value::String(model_ref.clone()));
@@ -678,6 +737,7 @@ mod tests {
         let opts = ZcodeApplyOptions {
             reasoning_levels: vec!["low".into(), "high".into(), "max".into()],
             reasoning_level: Some("high".into()),
+            ..Default::default()
         };
         let out = apply(
             &site(SiteProtocol::OpenaiCompatible),
@@ -725,6 +785,66 @@ mod tests {
             .and_then(|o| o.get("baseURL"))
             .and_then(Value::as_str)
             .is_some_and(|u| u.ends_with("/v1")));
+    }
+
+    #[test]
+    fn apply_write_all_writes_catalog_models_and_prunes_on_reapply() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("v2");
+        let opts = ZcodeApplyOptions {
+            write_all_models: true,
+            catalog_models: vec![
+                ("deepseek-chat".into(), "DeepSeek Chat".into()),
+                ("gpt-4.1".into(), String::new()),
+            ],
+            reasoning_levels: vec!["low".into(), "high".into()],
+            reasoning_level: Some("high".into()),
+        };
+        apply(
+            &site(SiteProtocol::OpenaiCompatible),
+            "sk-secret",
+            "glm-5.3",
+            &opts,
+            Some(home.to_str().unwrap()),
+            &dir.path().join("backups"),
+        )
+        .unwrap();
+        let root = read_config(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
+        let provider = provider_value(&root, "xiaobai-site-123").unwrap();
+        let models = provider.get("models").unwrap().as_object().unwrap();
+        assert_eq!(models.len(), 3);
+        // Family-derived ladder for the extra models; form ladder only for the default.
+        let deepseek = models.get("deepseek-chat").unwrap();
+        let variants: Vec<&str> = deepseek
+            .get("reasoning").unwrap().get("variants").unwrap()
+            .as_array().unwrap().iter().filter_map(Value::as_str).collect();
+        assert_eq!(variants, vec!["off", "high", "max"]);
+        assert_eq!(
+            deepseek.get("name").and_then(Value::as_str),
+            Some("DeepSeek Chat")
+        );
+        let summary = live_for_provider(&root, "xiaobai-site-123");
+        assert_eq!(summary.get("models"), Some(&Some("3".into())));
+        assert_eq!(
+            summary.get("model_ids"),
+            Some(&Some("deepseek-chat,glm-5.3,gpt-4.1".into()))
+        );
+
+        // Re-apply with the toggle off: extras are pruned, only the default stays.
+        apply(
+            &site(SiteProtocol::OpenaiCompatible),
+            "sk-secret",
+            "glm-5.3",
+            &ZcodeApplyOptions::default(),
+            Some(home.to_str().unwrap()),
+            &dir.path().join("backups"),
+        )
+        .unwrap();
+        let root = read_config(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
+        let models = provider_value(&root, "xiaobai-site-123").unwrap()
+            .get("models").unwrap().as_object().unwrap();
+        assert_eq!(models.len(), 1);
+        assert!(models.contains_key("glm-5.3"));
     }
 
     #[test]

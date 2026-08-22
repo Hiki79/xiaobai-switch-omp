@@ -184,16 +184,44 @@ fn revert_managed_capability_fields(doc: &mut DocumentMut, expected: &HashMap<St
     }
 }
 
+fn reasoning_level_entry(effort: &str) -> Value {
+    let description = match effort {
+        "minimal" => "Lightest reasoning for the fastest responses",
+        "low" => "Fast responses with lighter reasoning",
+        "medium" => "Balances speed and reasoning depth",
+        "high" => "Greater reasoning depth for complex problems",
+        "xhigh" => "Extra high reasoning depth",
+        "max" => "Maximum reasoning depth",
+        _ => "Reasoning effort",
+    };
+    json!({ "effort": effort, "description": description })
+}
+
+/// Efforts exposed per catalog model; falls back to Codex's stock ladder when
+/// the form did not narrow it.
+fn supported_reasoning_levels(levels: &[String]) -> Vec<Value> {
+    const DEFAULTS: [&str; 4] = ["low", "medium", "high", "xhigh"];
+    let efforts: Vec<&str> = if levels.is_empty() {
+        DEFAULTS.to_vec()
+    } else {
+        levels.iter().map(String::as_str).collect()
+    };
+    efforts.iter().map(|e| reasoning_level_entry(e)).collect()
+}
+
 fn build_model_catalog(
     models: &[(String, String)],
     site_name: &str,
     image_understanding: bool,
+    reasoning_levels: &[String],
+    default_reasoning_level: Option<&str>,
 ) -> Value {
     let modalities = if image_understanding {
         json!(["text", "image"])
     } else {
         json!(["text"])
     };
+    let levels = supported_reasoning_levels(reasoning_levels);
     let items: Vec<Value> = models
         .iter()
         .enumerate()
@@ -208,7 +236,7 @@ fn build_model_catalog(
                 "supported_in_api": true,
                 "input_modalities": modalities,
                 "priority": i + 1,
-                "default_reasoning_level": "medium",
+                "default_reasoning_level": default_reasoning_level.unwrap_or("medium"),
                 // Fields below are required by Codex's ModelInfo schema; omitting
                 // any of them makes Codex fail to parse the catalog and refuse to
                 // start (verified against codex-cli 0.148.0).
@@ -217,12 +245,7 @@ fn build_model_catalog(
                 "truncation_policy": { "mode": "tokens", "limit": 10000 },
                 "experimental_supported_tools": [],
                 "base_instructions": "",
-                "supported_reasoning_levels": [
-                    { "effort": "low", "description": "Fast responses with lighter reasoning" },
-                    { "effort": "medium", "description": "Balances speed and reasoning depth" },
-                    { "effort": "high", "description": "Greater reasoning depth for complex problems" },
-                    { "effort": "xhigh", "description": "Extra high reasoning depth" }
-                ]
+                "supported_reasoning_levels": levels
             })
         })
         .collect();
@@ -308,7 +331,13 @@ pub fn apply(
         } else {
             options.catalog_models.clone()
         };
-        let catalog = build_model_catalog(&catalog_models, &site.name, options.image_understanding);
+        let catalog = build_model_catalog(
+            &catalog_models,
+            &site.name,
+            options.image_understanding,
+            &options.reasoning_levels,
+            options.reasoning_effort.as_ref().map(|e| e.as_str()),
+        );
         let catalog_text = serde_json::to_string_pretty(&catalog)? + "\n";
         let codex_home = resolve_codex_home(codex_home_override)?;
         for existing in catalogs_to_backup(&doc, &catalog_path, &codex_home) {
@@ -784,6 +813,40 @@ pub fn summary_from_config(doc: &DocumentMut) -> HashMap<String, Option<String>>
     }
     if let Some(c) = doc.get("model_catalog_json").and_then(|i| i.as_str()) {
         out.insert("model_catalog_json".into(), Some(c.into()));
+        let catalog = fs::read_to_string(c)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+        if let Some(items) = catalog
+            .as_ref()
+            .and_then(|c| c.get("models"))
+            .and_then(Value::as_array)
+        {
+            let ids: Vec<&str> = items
+                .iter()
+                .filter_map(|m| m.get("slug").and_then(Value::as_str))
+                .collect();
+            if !ids.is_empty() {
+                out.insert("models".into(), Some(ids.len().to_string()));
+                out.insert("model_ids".into(), Some(ids.join(",")));
+            }
+            let default_slug = out.get("model").and_then(|v| v.as_deref());
+            let entry = items
+                .iter()
+                .find(|m| m.get("slug").and_then(Value::as_str) == default_slug)
+                .or_else(|| items.first());
+            if let Some(levels) = entry
+                .and_then(|m| m.get("supported_reasoning_levels"))
+                .and_then(Value::as_array)
+            {
+                let efforts: Vec<&str> = levels
+                    .iter()
+                    .filter_map(|l| l.get("effort").and_then(Value::as_str))
+                    .collect();
+                if !efforts.is_empty() {
+                    out.insert("reasoning_levels".into(), Some(efforts.join(",")));
+                }
+            }
+        }
     }
     if let Some(provider_id) = doc.get("model_provider").and_then(|i| i.as_str()) {
         if let Some(table) = doc
@@ -1202,14 +1265,43 @@ mod capability_write_tests {
 
     #[test]
     fn catalog_modalities_follow_understanding() {
-        let off = build_model_catalog(&[("m".into(), "M".into())], "S", false);
+        let off = build_model_catalog(&[("m".into(), "M".into())], "S", false, &[], None);
         assert_eq!(off["models"][0]["input_modalities"], json!(["text"]));
-        let on = build_model_catalog(&[("m".into(), "M".into())], "S", true);
+        let on = build_model_catalog(&[("m".into(), "M".into())], "S", true, &[], None);
         assert_eq!(off["models"][0]["input_modalities"], json!(["text"]));
         assert_eq!(
             on["models"][0]["input_modalities"],
             json!(["text", "image"])
         );
+    }
+
+    #[test]
+    fn catalog_reasoning_levels_follow_options() {
+        let stock = build_model_catalog(&[("m".into(), "M".into())], "S", false, &[], None);
+        let stock_efforts: Vec<&str> = stock["models"][0]["supported_reasoning_levels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["effort"].as_str().unwrap())
+            .collect();
+        assert_eq!(stock_efforts, vec!["low", "medium", "high", "xhigh"]);
+        assert_eq!(stock["models"][0]["default_reasoning_level"], json!("medium"));
+
+        let custom = build_model_catalog(
+            &[("m".into(), "M".into())],
+            "S",
+            false,
+            &["minimal".into(), "high".into(), "max".into()],
+            Some("high"),
+        );
+        let efforts: Vec<&str> = custom["models"][0]["supported_reasoning_levels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["effort"].as_str().unwrap())
+            .collect();
+        assert_eq!(efforts, vec!["minimal", "high", "max"]);
+        assert_eq!(custom["models"][0]["default_reasoning_level"], json!("high"));
     }
 
     #[test]
@@ -1285,7 +1377,7 @@ mod catalog_schema_tests {
 
     #[test]
     fn catalog_contains_codex_required_fields() {
-        let catalog = build_model_catalog(&[("m".into(), "M".into())], "S", false);
+        let catalog = build_model_catalog(&[("m".into(), "M".into())], "S", false, &[], None);
         let model = &catalog["models"][0];
         assert_eq!(model["shell_type"], json!("unified_exec"));
         assert_eq!(model["support_verbosity"], json!(false));

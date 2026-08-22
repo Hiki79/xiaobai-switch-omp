@@ -4,22 +4,22 @@ import { useTranslation } from "react-i18next";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { useApplyStore, useSiteStore } from "@/stores";
 import { ApplyFooter } from "./ApplyFooter";
+import { ModelCatalogSection } from "./ModelCatalogSection";
+import { ReasoningLevelFields } from "./ReasoningLevelFields";
 import { SiteSelect } from "./SiteSelect";
 import { TargetStatusCard, statusFor, toolFor } from "./TargetStatusCard";
 import { useApplySiteSelection } from "./useApplySiteSelection";
+import { useCatalogSelection } from "./useCatalogSelection";
 import {
   buildModelOptions,
+  hydrateCatalogSelection,
   hydrateZcodeForm,
+  parseLiveModelIds,
   zcodeReasoningLevelsForModel,
 } from "./hydrateApplyForm";
 import { showApplyException, showApplyOutcome } from "./showApplyOutcome";
 
 const rowStyle: React.CSSProperties = { padding: "4px 0" };
-
-function defaultLevel(levels: string[], current?: string): string | undefined {
-  if (current && levels.includes(current)) return current;
-  return levels.find((level) => level.toLowerCase() === "max") ?? levels[0];
-}
 
 export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
   const { t } = useTranslation();
@@ -44,12 +44,14 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
     status?.appliedSiteId,
   );
 
-  const [modelId, setModelId] = useState<string | undefined>();
-  const [reasoningLevels, setReasoningLevels] = useState<string[]>([]);
-  const [reasoningLevel, setReasoningLevel] = useState<string | undefined>();
-
   const models = siteId ? (modelsBySite[siteId] ?? []) : [];
   const modelsLoading = siteId ? Boolean(modelsLoadingBySite[siteId]) : false;
+
+  const [modelId, setModelId] = useState<string | undefined>();
+  const [writeAllModels, setWriteAllModels] = useState(false);
+  const [reasoningLevels, setReasoningLevels] = useState<string[]>([]);
+  const [reasoningLevel, setReasoningLevel] = useState<string | undefined>();
+  const { catalogIds, setCatalogIds } = useCatalogSelection(models);
 
   useEffect(() => {
     if (!siteId) return;
@@ -61,8 +63,10 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
     if (!site) {
       lastHydrate.current = null;
       setModelId(undefined);
+      setWriteAllModels(false);
       setReasoningLevels([]);
       setReasoningLevel(undefined);
+      setCatalogIds(null);
       return;
     }
     const stamp = status?.lastAppliedAt ?? null;
@@ -70,10 +74,15 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
     if (prev && prev.siteId === site.id && prev.stamp === stamp && prev.modelCount === models.length) return;
     const defaults = hydrateZcodeForm(site, status, models);
     setModelId(defaults.modelId);
+    setWriteAllModels(defaults.writeAllModels);
     setReasoningLevels(defaults.reasoningLevels);
     setReasoningLevel(defaults.reasoningLevel);
+    const liveIds = defaults.writeAllModels ? parseLiveModelIds(status?.liveSummary) : [];
+    setCatalogIds(
+      liveIds.length > 0 && models.length > 0 ? hydrateCatalogSelection(models, liveIds) : null,
+    );
     lastHydrate.current = { siteId: site.id, stamp, modelCount: models.length };
-  }, [site, status, models]);
+  }, [site, status, models, setCatalogIds]);
 
   const modelOptions = useMemo(
     () => buildModelOptions(models, [modelId]),
@@ -88,13 +97,8 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
       status,
     );
     setReasoningLevels(levels);
-    setReasoningLevel(defaultLevel(levels));
-  };
-
-  const handleLevelListChange = (values: string[]) => {
-    const next = values.map((value) => value.trim()).filter(Boolean);
-    setReasoningLevels(next);
-    setReasoningLevel((current) => defaultLevel(next, current));
+    const fallback = levels.find((level) => level.toLowerCase() === "max") ?? levels[0];
+    setReasoningLevel((current) => (current && levels.includes(current) ? current : fallback));
   };
 
   const handleApply = async () => {
@@ -114,6 +118,8 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
         siteId: site.id,
         targets: ["zcode"],
         modelId,
+        zcodeWriteAllModels: writeAllModels,
+        catalogModelIds: writeAllModels ? catalogIds : null,
         zcodeReasoningLevels: reasoningLevels,
         zcodeReasoningLevel: reasoningLevel ?? null,
       });
@@ -188,32 +194,33 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
         </SettingsGroup>
 
         {site && (
-          <SettingsGroup title={t("apply.groupZcodeReasoning")}>
-            <div style={rowStyle}>
-              <div className="mb-1 text-sm opacity-70">{t("apply.zcodeReasoningLevel")}</div>
-              <Select
-                className="w-full"
-                value={reasoningLevel}
-                options={reasoningLevels.map((level) => ({ value: level, label: level }))}
-                onChange={setReasoningLevel}
-                disabled={reasoningLevels.length === 0}
-                placeholder={t("apply.zcodeReasoningLevel")}
+          <>
+            <SettingsGroup title={t("apply.groupZcodeModels")}>
+              <ModelCatalogSection
+                title={t("apply.zcodeWriteAllModels")}
+                hint={t("apply.zcodeWriteAllModelsHint")}
+                models={models}
+                loading={modelsLoading}
+                writeAll={writeAllModels}
+                onWriteAllChange={setWriteAllModels}
+                selectedIds={catalogIds}
+                onSelectedIdsChange={setCatalogIds}
+                defaultModelId={modelId}
               />
-              <div className="mt-1 text-xs opacity-50">{t("apply.zcodeReasoningHint")}</div>
-            </div>
-            <div className="mt-4" style={rowStyle}>
-              <div className="mb-1 text-sm opacity-70">{t("apply.zcodeReasoningVariants")}</div>
-              <Select
-                mode="tags"
-                className="w-full"
-                value={reasoningLevels}
-                onChange={(values) => handleLevelListChange(values as string[])}
-                tokenSeparators={[",", " "]}
-                placeholder={t("apply.zcodeReasoningVariantsPlaceholder")}
+            </SettingsGroup>
+
+            <SettingsGroup title={t("apply.groupZcodeReasoning")}>
+              <ReasoningLevelFields
+                levels={reasoningLevels}
+                onLevelsChange={setReasoningLevels}
+                defaultLevel={reasoningLevel}
+                onDefaultLevelChange={setReasoningLevel}
+                defaultLabel={t("apply.zcodeReasoningLevel")}
+                defaultHint={t("apply.zcodeReasoningHint")}
+                variantsHint={t("apply.zcodeReasoningVariantsHint")}
               />
-              <div className="mt-1 text-xs opacity-50">{t("apply.zcodeReasoningVariantsHint")}</div>
-            </div>
-          </SettingsGroup>
+            </SettingsGroup>
+          </>
         )}
       </div>
 

@@ -441,19 +441,37 @@ export async function handleBrowserCommand<T>(
       const modelId = args?.modelId as string;
       const site = sites.find((s) => s.id === siteId);
       const targets = ((args?.targets as string[]) ?? []) as TargetKind[];
+      const catalogIds = (args?.catalogModelIds as string[] | null) ?? null;
       const appliedAt = now();
-      targetStatuses = targetStatuses.map((row) =>
-        targets.includes(row.kind)
-          ? {
-              ...row,
-              status: "applied",
-              appliedSiteId: siteId,
-              appliedSiteName: site?.name ?? null,
-              appliedModelId: modelId,
-              lastAppliedAt: appliedAt,
-            }
-          : row,
-      );
+      targetStatuses = targetStatuses.map((row) => {
+        if (!targets.includes(row.kind)) return row;
+        const writeAll =
+          row.kind === "codex"
+            ? Boolean(args?.codexWriteAllModels)
+            : row.kind === "omp"
+              ? Boolean(args?.ompWriteAllModels)
+              : row.kind === "zcode"
+                ? Boolean(args?.zcodeWriteAllModels)
+                : false;
+        const allIds = (models.get(siteId) ?? []).map((m) => m.modelId);
+        const written = writeAll
+          ? Array.from(new Set([...(catalogIds ?? allIds), modelId]))
+          : [modelId];
+        return {
+          ...row,
+          status: "applied",
+          appliedSiteId: siteId,
+          appliedSiteName: site?.name ?? null,
+          appliedModelId: modelId,
+          lastAppliedAt: appliedAt,
+          liveSummary: {
+            ...row.liveSummary,
+            model: modelId,
+            models: String(written.length),
+            model_ids: written.join(","),
+          },
+        };
+      });
       const result: ApplyResult = {
         siteId,
         modelId,

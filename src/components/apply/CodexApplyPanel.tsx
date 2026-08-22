@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, App, Select, Space, Switch, Divider, Skeleton } from "antd";
+import { Alert, App, Select, Space, Divider, Skeleton } from "antd";
 import { useTranslation } from "react-i18next";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { useApplyStore, useSiteStore } from "@/stores";
@@ -11,10 +11,21 @@ import {
   type CodexCapabilityFlags,
 } from "@/lib/siteCapabilities";
 import { ApplyFooter } from "./ApplyFooter";
+import { ModelCatalogSection } from "./ModelCatalogSection";
+import { ReasoningLevelFields } from "./ReasoningLevelFields";
 import { SiteSelect } from "./SiteSelect";
 import { TargetStatusCard, statusFor, toolFor } from "./TargetStatusCard";
 import { useApplySiteSelection } from "./useApplySiteSelection";
-import { buildModelOptions, codexReasoningLevelsForModel, defaultReasoningLevel, hydrateCodexForm } from "./hydrateApplyForm";
+import { useCatalogSelection } from "./useCatalogSelection";
+import {
+  buildModelOptions,
+  CODEX_EFFORT_LIST,
+  codexReasoningLevelsForModel,
+  defaultReasoningLevel,
+  hydrateCatalogSelection,
+  hydrateCodexForm,
+  parseLiveModelIds,
+} from "./hydrateApplyForm";
 import { showApplyException, showApplyOutcome } from "./showApplyOutcome";
 import { CodexCapabilitySwitchList } from "./CodexCapabilitySwitchList";
 
@@ -43,36 +54,41 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
     status?.appliedSiteId,
   );
 
+  const models = siteId ? (modelsBySite[siteId] ?? []) : [];
+  const modelsLoading = siteId ? Boolean(modelsLoadingBySite[siteId]) : false;
+
   const [modelId, setModelId] = useState<string | undefined>();
   const [writeAllModels, setWriteAllModels] = useState(false);
   const [reasoning, setReasoning] = useState<CodexReasoningEffort | undefined>();
+  const [reasoningLevels, setReasoningLevels] = useState<CodexReasoningEffort[]>([]);
   const [capabilitySource, setCapabilitySource] = useState<CodexCapabilitySource>("site");
   const [codexFlags, setCodexFlags] = useState<CodexCapabilityFlags>(EMPTY_CODEX_FLAGS);
-
-  const models = siteId ? (modelsBySite[siteId] ?? []) : [];
-  const modelsLoading = siteId ? Boolean(modelsLoadingBySite[siteId]) : false;
+  const { catalogIds, setCatalogIds } = useCatalogSelection(models);
 
   useEffect(() => {
     if (!siteId) return;
     void listModels(siteId).catch(() => null);
   }, [siteId, listModels]);
 
-  const lastHydrate = useRef<{ siteId: string; stamp: number | null } | null>(null);
+  const lastHydrate = useRef<{ siteId: string; stamp: number | null; modelCount: number } | null>(null);
   useEffect(() => {
     if (!site) {
       lastHydrate.current = null;
       setModelId(undefined);
       setCapabilitySource("site");
       setCodexFlags(EMPTY_CODEX_FLAGS);
+      setCatalogIds(null);
       return;
     }
     const stamp = status?.lastAppliedAt ?? null;
     const prev = lastHydrate.current;
-    if (prev && prev.siteId === site.id && prev.stamp === stamp) return;
+    if (prev && prev.siteId === site.id && prev.stamp === stamp && prev.modelCount === models.length) return;
     const defaults = hydrateCodexForm(site, status);
     setModelId(defaults.modelId);
     setWriteAllModels(defaults.writeAllModels);
-    setReasoning(defaults.reasoning);
+    const levels = codexReasoningLevelsForModel(defaults.modelId);
+    setReasoningLevels(levels);
+    setReasoning(defaultReasoningLevel(levels, defaults.reasoning));
     setCapabilitySource(defaults.capabilitySource);
     setCodexFlags({
       compact: defaults.remoteCompaction,
@@ -80,25 +96,27 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
       imagegen: defaults.imageGeneration,
       search: defaults.webSearch,
     });
-    lastHydrate.current = { siteId: site.id, stamp };
-  }, [site, status]);
+    const liveIds = defaults.writeAllModels ? parseLiveModelIds(status?.liveSummary) : [];
+    setCatalogIds(
+      liveIds.length > 0 && models.length > 0 ? hydrateCatalogSelection(models, liveIds) : null,
+    );
+    lastHydrate.current = { siteId: site.id, stamp, modelCount: models.length };
+  }, [site, status, models, setCatalogIds]);
 
   const modelOptions = useMemo(
     () => buildModelOptions(models, [modelId]),
     [models, modelId],
   );
 
-  const effortLevels = useMemo(() => codexReasoningLevelsForModel(modelId), [modelId]);
-
   const handleModelChange = (nextModelId: string) => {
     setModelId(nextModelId);
-    setReasoning((current) =>
-      defaultReasoningLevel(codexReasoningLevelsForModel(nextModelId), current),
-    );
+    const levels = codexReasoningLevelsForModel(nextModelId);
+    setReasoningLevels(levels);
+    setReasoning((current) => defaultReasoningLevel(levels, current));
   };
 
-  const effortLabel = (value: CodexReasoningEffort): string => {
-    switch (value) {
+  const effortLabel = (value: string): string => {
+    switch (value as CodexReasoningEffort) {
       case "minimal":
         return t("apply.effortMinimal");
       case "low":
@@ -111,6 +129,8 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
         return t("apply.effortXhigh");
       case "max":
         return t("apply.effortMax");
+      default:
+        return value;
     }
   };
 
@@ -132,7 +152,9 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
         targets: ["codex"],
         modelId,
         codexWriteAllModels: writeAllModels,
+        catalogModelIds: writeAllModels ? catalogIds : null,
         codexReasoningEffort: reasoning ?? null,
+        codexReasoningLevels: reasoningLevels,
         codexCapabilitySource: capabilitySource,
         codexRemoteCompaction: capabilitySource === "custom" ? codexFlags.compact : undefined,
         codexImageUnderstanding: capabilitySource === "custom" ? codexFlags.vision : undefined,
@@ -212,44 +234,31 @@ export const CodexApplyPanel = memo(function CodexApplyPanel() {
         {site && (
           <>
             <SettingsGroup title={t("apply.groupCodexModels")}>
-              <div style={rowStyle} className="flex items-center justify-between gap-4">
-                <div>
-                  <div>{t("apply.writeAllModels")}</div>
-                  <div className="text-xs opacity-50">{t("apply.writeAllModelsHint")}</div>
-                </div>
-                <Switch checked={writeAllModels} onChange={setWriteAllModels} />
-              </div>
-              {writeAllModels && (
-                <>
-                  <Divider style={{ margin: "8px 0" }} />
-                  <div className="text-xs opacity-60">
-                    {modelsLoading && models.length === 0 ? (
-                      <Skeleton.Input active size="small" style={{ width: 160 }} />
-                    ) : (
-                      t("apply.catalogModelCount", { count: models.length || (modelId ? 1 : 0) })
-                    )}
-                  </div>
-                </>
-              )}
+              <ModelCatalogSection
+                title={t("apply.writeAllModels")}
+                hint={t("apply.writeAllModelsHint")}
+                models={models}
+                loading={modelsLoading}
+                writeAll={writeAllModels}
+                onWriteAllChange={setWriteAllModels}
+                selectedIds={catalogIds}
+                onSelectedIdsChange={setCatalogIds}
+                defaultModelId={modelId}
+              />
             </SettingsGroup>
 
             <SettingsGroup title={t("apply.groupReasoning")}>
-              <div style={rowStyle} className="flex items-center justify-between gap-4">
-                <div>
-                  <div>{t("apply.reasoningEffort")}</div>
-                  <div className="text-xs opacity-50">{t("apply.reasoningHint")}</div>
-                </div>
-                <Select
-                  style={{ minWidth: 160 }}
-                  allowClear
-                  value={reasoning}
-                  onChange={(v) => setReasoning(v as CodexReasoningEffort | undefined)}
-                  options={effortLevels.map((value) => ({
-                    value,
-                    label: effortLabel(value),
-                  }))}
-                />
-              </div>
+              <ReasoningLevelFields
+                levels={reasoningLevels}
+                onLevelsChange={(levels) => setReasoningLevels(levels as CodexReasoningEffort[])}
+                defaultLevel={reasoning}
+                onDefaultLevelChange={(level) => setReasoning(level as CodexReasoningEffort | undefined)}
+                allowed={CODEX_EFFORT_LIST}
+                levelLabel={effortLabel}
+                defaultLabel={t("apply.reasoningEffort")}
+                defaultHint={t("apply.reasoningHint")}
+                variantsHint={t("apply.codexReasoningVariantsHint")}
+              />
             </SettingsGroup>
 
             <SettingsGroup title={t("apply.groupCodexCapabilities")}>

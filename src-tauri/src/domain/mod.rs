@@ -369,6 +369,8 @@ pub struct ClaudeApplyOptions {
 pub struct CodexApplyOptions {
     pub write_all_models: bool,
     pub reasoning_effort: Option<CodexReasoningEffort>,
+    /// Effort ladder written into the model catalog's supported_reasoning_levels.
+    pub reasoning_levels: Vec<String>,
     /// Site models used when `write_all_models` is true.
     pub catalog_models: Vec<(String, String)>, // (model_id, display_name)
     pub remote_compaction: bool,
@@ -394,6 +396,10 @@ pub struct OmpApplyOptions {
 /// default instead of being a single global enum.
 #[derive(Debug, Clone, Default)]
 pub struct ZcodeApplyOptions {
+    pub write_all_models: bool,
+    /// Site models written under the managed provider when `write_all_models`
+    /// is true; extra models are pruned when it is false.
+    pub catalog_models: Vec<(String, String)>,
     pub reasoning_levels: Vec<String>,
     pub reasoning_level: Option<String>,
 }

@@ -15,17 +15,20 @@ import {
 } from "@/lib/siteCapabilities";
 
 const CLAUDE_EFFORTS = new Set<ClaudeEffortLevel>(["low", "medium", "high", "max"]);
-const CODEX_EFFORTS = new Set<CodexReasoningEffort>([
+
+/** Efforts Codex accepts on model_reasoning_effort and catalog levels. */
+export const CODEX_EFFORT_LIST = [
   "minimal",
   "low",
   "medium",
   "high",
   "xhigh",
   "max",
-]);
+] as const;
+const CODEX_EFFORTS = new Set<CodexReasoningEffort>(CODEX_EFFORT_LIST);
 
 /** Effort ladder omp understands on `:level` suffixes and thinking.levels. */
-const OMP_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export const OMP_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 const DEFAULT_FAMILY_LEVELS = ["low", "medium", "high", "max"];
 
@@ -203,8 +206,32 @@ export interface OmpFormDefaults {
 
 export interface ZcodeFormDefaults {
   modelId: string | undefined;
+  writeAllModels: boolean;
   reasoningLevels: string[];
   reasoningLevel: string | undefined;
+}
+
+/** Model ids a target currently has written (`model_ids` live summary key). */
+export function parseLiveModelIds(live: LiveSummary | undefined): string[] {
+  const raw = liveStr(live, "model_ids");
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+/** Checked catalog models for the picker: what the target already has written,
+ * falling back to every site model when nothing was written yet. */
+export function hydrateCatalogSelection(
+  models: SiteModel[],
+  liveModelIds: string[],
+): string[] {
+  if (liveModelIds.length > 0) {
+    const written = new Set(liveModelIds);
+    return models.filter((model) => written.has(model.modelId)).map((m) => m.modelId);
+  }
+  return models.map((m) => m.modelId);
 }
 
 /** Model-family reasoning ladders shared by every target; each target keeps
@@ -351,6 +378,8 @@ export function hydrateZcodeForm(
   const modelId = onSite
     ? (liveModel ?? status?.appliedModelId ?? site?.selectedModelId ?? undefined)
     : (site?.selectedModelId ?? undefined);
+  const writtenModelIds = parseLiveModelIds(live);
+  const count = Number(liveStr(live, "models") ?? "1");
   const levels = zcodeReasoningLevelsForModel(
     modelId,
     models.find((model) => model.modelId === modelId),
@@ -358,6 +387,9 @@ export function hydrateZcodeForm(
   );
   return {
     modelId,
+    writeAllModels:
+      onSite &&
+      ((Number.isFinite(count) && count > 1) || writtenModelIds.length > 1),
     reasoningLevels: levels,
     reasoningLevel: preferredZcodeLevel(
       levels,

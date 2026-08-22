@@ -278,6 +278,15 @@ pub fn summary_from_docs(models: &Mapping, cfg: &Mapping) -> HashMap<String, Opt
             .map(|list| list.len().to_string())
             .unwrap_or_else(|| "0".into());
         out.insert("models".into(), Some(count));
+        if let Some(list) = prov.get(&s("models")).and_then(Yaml::as_sequence) {
+            let ids: Vec<&str> = list
+                .iter()
+                .filter_map(|entry| entry.as_mapping().and_then(|e| get_str(e, "id")))
+                .collect();
+            if !ids.is_empty() {
+                out.insert("model_ids".into(), Some(ids.join(",")));
+            }
+        }
         if let Some(sel) = default_selector {
             // `provider/model:level` — surface the bare model id plus the
             // reasoning level separately so the UI never parses selectors.

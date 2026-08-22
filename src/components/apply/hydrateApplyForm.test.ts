@@ -5,11 +5,13 @@ import {
   claudeEffortLevelsForModel,
   codexReasoningLevelsForModel,
   defaultReasoningLevel,
+  hydrateCatalogSelection,
   hydrateClaudeForm,
   hydrateCodexForm,
   hydrateOmpForm,
   hydrateZcodeForm,
   ompReasoningLevelsForModel,
+  parseLiveModelIds,
   pickApplySiteId,
   selectableApplySites,
   zcodeReasoningLevelsForModel,
@@ -350,6 +352,64 @@ describe("hydrateZcodeForm", () => {
     };
     expect(zcodeReasoningLevelsForModel("vendor-model", model)).toEqual(["quick", "thorough"]);
     expect(zcodeReasoningLevelsForModel("glm-5.3")).toEqual(["low", "max", "high"]);
+  });
+
+  it("marks write-all on when the provider holds several models", () => {
+    const multi = hydrateZcodeForm(
+      site({ id: "shuai", selectedModelId: "glm-5.3" }),
+      status({
+        kind: "zcode",
+        appliedSiteId: "shuai",
+        liveSummary: {
+          model: "xiaobai-shuai/glm-5.3",
+          models: "3",
+          model_ids: "deepseek-chat,glm-5.3,gpt-4.1",
+        },
+      }),
+    );
+    expect(multi.writeAllModels).toBe(true);
+
+    const single = hydrateZcodeForm(
+      site({ id: "shuai", selectedModelId: "glm-5.3" }),
+      status({
+        kind: "zcode",
+        appliedSiteId: "shuai",
+        liveSummary: { model: "xiaobai-shuai/glm-5.3", models: "1" },
+      }),
+    );
+    expect(single.writeAllModels).toBe(false);
+
+    const fresh = hydrateZcodeForm(site({ id: "shuai", selectedModelId: "glm-5.3" }), undefined);
+    expect(fresh.writeAllModels).toBe(false);
+  });
+});
+
+describe("catalog selection helpers", () => {
+  const models: SiteModel[] = [
+    { id: "1", siteId: "s", modelId: "glm-5.3", displayName: "GLM", ownedBy: null, raw: null },
+    { id: "2", siteId: "s", modelId: "deepseek-chat", displayName: "deepseek-chat", ownedBy: null, raw: null },
+    { id: "3", siteId: "s", modelId: "gpt-4.1", displayName: "gpt-4.1", ownedBy: null, raw: null },
+  ];
+
+  it("parses written model ids from the live summary", () => {
+    expect(parseLiveModelIds({ model_ids: "glm-5.3, deepseek-chat" })).toEqual([
+      "glm-5.3",
+      "deepseek-chat",
+    ]);
+    expect(parseLiveModelIds({})).toEqual([]);
+    expect(parseLiveModelIds(undefined)).toEqual([]);
+  });
+
+  it("intersects written ids with the site catalog and falls back to all", () => {
+    expect(hydrateCatalogSelection(models, ["glm-5.3", "gpt-4.1", "gone-model"])).toEqual([
+      "glm-5.3",
+      "gpt-4.1",
+    ]);
+    expect(hydrateCatalogSelection(models, [])).toEqual([
+      "glm-5.3",
+      "deepseek-chat",
+      "gpt-4.1",
+    ]);
   });
 });
 

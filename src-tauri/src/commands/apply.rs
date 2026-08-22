@@ -130,6 +130,7 @@ pub fn apply_site(
     claude_effort_level: Option<String>,
     codex_write_all_models: Option<bool>,
     codex_reasoning_effort: Option<String>,
+    codex_reasoning_levels: Option<Vec<String>>,
     codex_remote_compaction: Option<bool>,
     codex_image_understanding: Option<bool>,
     codex_image_generation: Option<bool>,
@@ -138,8 +139,11 @@ pub fn apply_site(
     omp_write_all_models: Option<bool>,
     omp_reasoning_levels: Option<Vec<String>>,
     omp_reasoning_level: Option<String>,
+    zcode_write_all_models: Option<bool>,
     zcode_reasoning_levels: Option<Vec<String>>,
     zcode_reasoning_level: Option<String>,
+    // Checked site model ids for write-all targets; None means every model.
+    catalog_model_ids: Option<Vec<String>>,
 ) -> AppResult<ApplyResult> {
     if targets.is_empty() {
         return Err(AppError::new("validation_failed", "no targets selected"));
@@ -188,19 +192,45 @@ pub fn apply_site(
 
     let write_all = codex_write_all_models.unwrap_or(false);
     let omp_write_all = omp_write_all_models.unwrap_or(false);
+    let zcode_write_all = zcode_write_all_models.unwrap_or(false);
     let need_catalog = (write_all && targets.contains(&TargetKind::Codex))
-        || (omp_write_all && targets.contains(&TargetKind::Omp));
+        || (omp_write_all && targets.contains(&TargetKind::Omp))
+        || (zcode_write_all && targets.contains(&TargetKind::Zcode));
     let catalog_models = if need_catalog {
-        state.db.with_conn(|c| {
+        let models = state.db.with_conn(|c| {
             let models = repo::site::list_models(c, &site_id)?;
             Ok(models
                 .into_iter()
                 .map(|m| (m.model_id, m.display_name))
                 .collect::<Vec<_>>())
-        })?
+        })?;
+        match catalog_model_ids {
+            // The picker narrowed the catalog: keep DB order, drop unchecked
+            // ids (and unknown ones) so the target only gets what the user
+            // picked. The default model is re-added by each adapter.
+            Some(ids) => {
+                let wanted: std::collections::HashSet<String> = ids
+                    .into_iter()
+                    .map(|id| id.trim().to_string())
+                    .filter(|id| !id.is_empty())
+                    .collect();
+                models
+                    .into_iter()
+                    .filter(|(id, _)| wanted.contains(id))
+                    .collect::<Vec<_>>()
+            }
+            None => models,
+        }
     } else {
         vec![]
     };
+
+    let codex_reasoning_levels = codex_reasoning_levels
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|raw| CodexReasoningEffort::parse(raw))
+        .map(|effort| effort.as_str().to_string())
+        .collect::<Vec<_>>();
 
     let omp_opts = OmpApplyOptions {
         write_all_models: omp_write_all,
@@ -210,6 +240,8 @@ pub fn apply_site(
     };
 
     let zcode_opts = ZcodeApplyOptions {
+        write_all_models: zcode_write_all,
+        catalog_models: catalog_models.clone(),
         reasoning_levels: zcode_reasoning_levels.unwrap_or_default(),
         reasoning_level: non_empty(zcode_reasoning_level),
     };
@@ -219,6 +251,7 @@ pub fn apply_site(
         reasoning_effort: codex_reasoning_effort
             .as_deref()
             .and_then(CodexReasoningEffort::parse),
+        reasoning_levels: codex_reasoning_levels,
         catalog_models,
         remote_compaction,
         image_understanding,

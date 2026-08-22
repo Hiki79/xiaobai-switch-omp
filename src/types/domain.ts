@@ -167,15 +167,22 @@ export interface ApplyRequest {
   codexWebSearch?: boolean;
   /** `site` reads the site preset; `custom` uses the four bools above. */
   codexCapabilitySource?: CodexCapabilitySource;
+  /** Reasoning efforts written into the Codex model catalog levels. */
+  codexReasoningLevels?: CodexReasoningEffort[] | null;
   /** Write the site model list into the omp provider entry. */
   ompWriteAllModels?: boolean;
   /** Effort ladder written into omp modelOverrides thinking levels. */
   ompReasoningLevels?: string[] | null;
   /** Default thinking level applied via the `:level` modelRoles suffix. */
   ompReasoningLevel?: string | null;
+  /** Write the site model list into the ZCode provider entry. */
+  zcodeWriteAllModels?: boolean;
   /** ZCode model-defined reasoning variants and the selected default variant. */
   zcodeReasoningLevels?: ZcodeReasoningLevel[] | null;
   zcodeReasoningLevel?: ZcodeReasoningLevel | null;
+  /** Checked site model ids to write when a write-all toggle is on
+   * (applies to codex/omp/zcode); null/undefined means "every site model". */
+  catalogModelIds?: string[] | null;
 }
 
 export interface ApplyTargetResult {
