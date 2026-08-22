@@ -27,6 +27,7 @@ pub struct TrayLabels {
     pub codex: &'static str,
     pub omp: &'static str,
     pub zcode: &'static str,
+    pub dsh: &'static str,
     pub applied: &'static str,
     pub stale: &'static str,
     pub orphan: &'static str,
@@ -49,6 +50,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             codex: "Codex",
             omp: "omp",
             zcode: "ZCode",
+            dsh: "dsh",
             applied: "Applied",
             stale: "Stale",
             orphan: "Orphan",
@@ -68,6 +70,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             codex: "Codex",
             omp: "omp",
             zcode: "ZCode",
+            dsh: "dsh",
             applied: "已应用",
             stale: "已过期",
             orphan: "配置游离",
@@ -96,6 +99,7 @@ fn kind_label(labels: &TrayLabels, kind: TargetKind) -> &'static str {
         TargetKind::Codex => labels.codex,
         TargetKind::Omp => labels.omp,
         TargetKind::Zcode => labels.zcode,
+        TargetKind::Dsh => labels.dsh,
     }
 }
 
@@ -136,8 +140,18 @@ pub fn format_model_line(model_id: Option<&str>) -> Option<String> {
     Some(truncate_label(model, TITLE_MAX_CHARS))
 }
 
-pub fn format_tooltip(labels: &TrayLabels, claude: &str, codex: &str, omp: &str, zcode: &str) -> String {
-    format!("{}\n{}\n{}\n{}\n{}", labels.header, claude, codex, omp, zcode)
+pub fn format_tooltip(
+    labels: &TrayLabels,
+    claude: &str,
+    codex: &str,
+    omp: &str,
+    zcode: &str,
+    dsh: &str,
+) -> String {
+    format!(
+        "{}\n{}\n{}\n{}\n{}\n{}",
+        labels.header, claude, codex, omp, zcode, dsh
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +196,8 @@ pub struct TraySnapshot {
     pub omp_model: Option<String>,
     pub zcode_line: String,
     pub zcode_model: Option<String>,
+    pub dsh_line: String,
+    pub dsh_model: Option<String>,
     pub tooltip: String,
     pub sites: Vec<QuickSite>,
 }
@@ -217,6 +233,13 @@ impl TraySnapshot {
             None,
             None,
         );
+        let dsh = format_target_status_line(
+            &labels,
+            TargetKind::Dsh,
+            ApplyStatus::NotApplied,
+            None,
+            None,
+        );
         Self {
             language: language.to_string(),
             claude_line: claude.clone(),
@@ -227,7 +250,9 @@ impl TraySnapshot {
             omp_model: None,
             zcode_line: zcode.clone(),
             zcode_model: None,
-            tooltip: format_tooltip(&labels, &claude, &codex, &omp, &zcode),
+            dsh_line: dsh.clone(),
+            dsh_model: None,
+            tooltip: format_tooltip(&labels, &claude, &codex, &omp, &zcode, &dsh),
             sites: vec![],
         }
     }
@@ -308,6 +333,10 @@ fn build_menu(
     if let Some(model) = &snapshot.zcode_model {
         append_plain_item(app, &menu, "status_zcode_model", model, false)?;
     }
+    append_plain_item(app, &menu, "status_dsh", &snapshot.dsh_line, false)?;
+    if let Some(model) = &snapshot.dsh_model {
+        append_plain_item(app, &menu, "status_dsh_model", model, false)?;
+    }
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     append_native_icon_item(
@@ -373,7 +402,13 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
     // One line + optional model line per target, iterated instead of the old
     // duplicated per-target blocks.
     let mut lines: Vec<(TargetKind, String, Option<String>, String)> = Vec::new();
-    for kind in [TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp, TargetKind::Zcode] {
+    for kind in [
+        TargetKind::ClaudeCode,
+        TargetKind::Codex,
+        TargetKind::Omp,
+        TargetKind::Zcode,
+        TargetKind::Dsh,
+    ] {
         let status = statuses.iter().find(|s| s.kind == kind);
         let line = match status {
             Some(s) => format_target_status_line(
@@ -402,7 +437,11 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
     let tooltip = format!(
         "{}\n{}",
         labels.header,
-        lines.iter().map(|(_, _, _, l)| l.as_str()).collect::<Vec<_>>().join("\n")
+        lines
+            .iter()
+            .map(|(_, _, _, l)| l.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 
     let sites = state
@@ -428,12 +467,10 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
         omp_model: lines[2].2.clone(),
         zcode_line: lines[3].1.clone(),
         zcode_model: lines[3].2.clone(),
+        dsh_line: lines[4].1.clone(),
+        dsh_model: lines[4].2.clone(),
         tooltip,
-        sites: pick_quick_sites(
-            &rows,
-            &applied,
-            QUICK_SITE_LIMIT,
-        ),
+        sites: pick_quick_sites(&rows, &applied, QUICK_SITE_LIMIT),
     }
 }
 
@@ -504,7 +541,13 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
         | "status_claude"
         | "status_claude_model"
         | "status_codex"
-        | "status_codex_model" => {}
+        | "status_codex_model"
+        | "status_omp"
+        | "status_omp_model"
+        | "status_zcode"
+        | "status_zcode_model"
+        | "status_dsh"
+        | "status_dsh_model" => {}
         other if other.starts_with(APPLY_PREFIX) => {
             let site_id = other[APPLY_PREFIX.len()..].to_string();
             if site_id.is_empty() {
@@ -650,12 +693,14 @@ mod tests {
             "Codex · 未应用",
             "omp · 未应用",
             "ZCode · 未应用",
+            "dsh · 未应用",
         );
         assert!(tip.starts_with("XiaoBaiSwitch"));
         assert!(tip.contains("Claude Code"));
         assert!(tip.contains("Codex"));
         assert!(tip.contains("ZCode"));
-        assert_eq!(tip.lines().count(), 5);
+        assert!(tip.contains("dsh"));
+        assert_eq!(tip.lines().count(), 6);
     }
 
     #[test]

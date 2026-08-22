@@ -291,17 +291,20 @@ function PathsSection() {
   const [codex, setCodex] = useState(settings.codexHomeOverride ?? "");
   const [omp, setOmp] = useState(settings.ompHomeOverride ?? "");
   const [zcode, setZcode] = useState(settings.zcodeHomeOverride ?? "");
+  const [dsh, setDsh] = useState(settings.dshHomeOverride ?? "");
 
   useEffect(() => {
     setClaude(settings.claudeHomeOverride ?? "");
     setCodex(settings.codexHomeOverride ?? "");
     setOmp(settings.ompHomeOverride ?? "");
     setZcode(settings.zcodeHomeOverride ?? "");
+    setDsh(settings.dshHomeOverride ?? "");
   }, [
     settings.claudeHomeOverride,
     settings.codexHomeOverride,
     settings.ompHomeOverride,
     settings.zcodeHomeOverride,
+    settings.dshHomeOverride,
   ]);
 
   const onSave = async () => {
@@ -310,6 +313,7 @@ function PathsSection() {
       codexHomeOverride: codex.trim() || null,
       ompHomeOverride: omp.trim() || null,
       zcodeHomeOverride: zcode.trim() || null,
+      dshHomeOverride: dsh.trim() || null,
     });
     message.success(t("settings.pathsSaved"));
   };
@@ -346,6 +350,14 @@ function PathsSection() {
           <Input
             value={zcode}
             onChange={(e) => setZcode(e.target.value)}
+            placeholder={t("settings.pathPlaceholder")}
+          />
+        </div>
+        <div className="mb-3">
+          <div className="mb-1 text-sm">{t("settings.dshHome")}</div>
+          <Input
+            value={dsh}
+            onChange={(event) => setDsh(event.target.value)}
             placeholder={t("settings.pathPlaceholder")}
           />
         </div>
@@ -568,6 +580,8 @@ function AboutSection() {
             <li>~/.claude/settings.json</li>
             <li>~/.codex/config.toml</li>
             <li>~/.zcode/v2/config.json</li>
+            <li>~/.dsh/settings.yaml</li>
+            <li>~/.dsh/.credentials.yaml</li>
           </ul>
           <Button className="mt-3" onClick={() => void invoke("open_path", { path: paths.appDir })}>
             {t("settings.openAppDir")}

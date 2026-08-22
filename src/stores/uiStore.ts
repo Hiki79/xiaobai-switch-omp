@@ -4,7 +4,7 @@ import type { SiteDeepLinkPayload } from "@/lib/siteDeepLink";
 export type AppPage = "sites" | "apply" | "settings";
 export type SettingsSection = "general" | "network" | "paths" | "backup" | "about";
 /** Apply center left sidebar target. */
-export type ApplyTargetTab = "claude_code" | "codex" | "omp" | "zcode";
+export type ApplyTargetTab = "claude_code" | "codex" | "omp" | "zcode" | "dsh";
 
 interface UIState {
   activePage: AppPage;

@@ -73,6 +73,15 @@ pub fn default_zcode_home() -> AppResult<PathBuf> {
     Ok(home_dir()?.join(".zcode").join("v2"))
 }
 
+pub fn default_dsh_home() -> AppResult<PathBuf> {
+    if let Ok(v) = std::env::var("DSH_HOME") {
+        if !v.trim().is_empty() {
+            return Ok(PathBuf::from(v));
+        }
+    }
+    Ok(home_dir()?.join(".dsh"))
+}
+
 pub fn resolve_claude_home(override_path: Option<&str>) -> AppResult<PathBuf> {
     if let Some(p) = override_path {
         if !p.trim().is_empty() {
@@ -107,6 +116,15 @@ pub fn resolve_zcode_home(override_path: Option<&str>) -> AppResult<PathBuf> {
         }
     }
     default_zcode_home()
+}
+
+pub fn resolve_dsh_home(override_path: Option<&str>) -> AppResult<PathBuf> {
+    if let Some(p) = override_path {
+        if !p.trim().is_empty() {
+            return Ok(PathBuf::from(p));
+        }
+    }
+    default_dsh_home()
 }
 
 pub fn app_paths_dto() -> AppResult<AppPaths> {

@@ -78,12 +78,25 @@ fn provider_id_for_site(site: &SiteRow) -> String {
     format!("{PROVIDER_PREFIX}{suffix}")
 }
 
+fn strict_levels_for_model(model_id: &str) -> Option<Vec<String>> {
+    crate::reasoning_meta::always_thinking_levels(model_id)
+}
+
 fn default_levels_for_model(model_id: &str) -> Vec<String> {
+    if let Some(strict) = strict_levels_for_model(model_id) {
+        return strict;
+    }
     let id = model_id.to_ascii_lowercase();
     if id.contains("glm-5.3") || id.contains("glm5.3") {
-        vec!["low", "max", "high"].into_iter().map(String::from).collect()
+        vec!["low", "max", "high"]
+            .into_iter()
+            .map(String::from)
+            .collect()
     } else if id.contains("glm-5.2") || id.contains("glm5.2") {
-        vec!["nothink", "high", "max"].into_iter().map(String::from).collect()
+        vec!["nothink", "high", "max"]
+            .into_iter()
+            .map(String::from)
+            .collect()
     } else if id.contains("gpt") || id.contains("o1") || id.contains("o3") {
         vec!["low", "medium", "high", "xhigh"]
             .into_iter()
@@ -95,9 +108,15 @@ fn default_levels_for_model(model_id: &str) -> Vec<String> {
             .map(String::from)
             .collect()
     } else if id.contains("kimi") {
-        vec!["low", "high", "max"].into_iter().map(String::from).collect()
+        vec!["low", "high", "max"]
+            .into_iter()
+            .map(String::from)
+            .collect()
     } else if id.contains("deepseek") {
-        vec!["off", "high", "max"].into_iter().map(String::from).collect()
+        vec!["off", "high", "max"]
+            .into_iter()
+            .map(String::from)
+            .collect()
     } else if id.contains("gemini") {
         vec!["minimal", "low", "medium", "high"]
             .into_iter()
@@ -106,7 +125,10 @@ fn default_levels_for_model(model_id: &str) -> Vec<String> {
     } else {
         // GLM-style relays reject "medium" on many models; the safe common
         // ladder for unknown families is low/high/max.
-        vec!["low", "high", "max"].into_iter().map(String::from).collect()
+        vec!["low", "high", "max"]
+            .into_iter()
+            .map(String::from)
+            .collect()
     }
 }
 
@@ -177,6 +199,9 @@ fn default_model_meta(
 }
 
 fn normalize_levels(model_id: &str, requested: &[String], existing: Option<&Value>) -> Vec<String> {
+    if let Some(strict) = strict_levels_for_model(model_id) {
+        return strict;
+    }
     let mut out = Vec::new();
     fn push_level(out: &mut Vec<String>, raw: &str) {
         let value = raw.trim();
@@ -213,7 +238,10 @@ fn existing_default(existing: Option<&Value>) -> Option<String> {
 }
 
 fn choose_level(levels: &[String], requested: Option<&str>, previous: Option<String>) -> String {
-    if let Some(value) = requested.map(str::trim).filter(|v| levels.iter().any(|x| x == v)) {
+    if let Some(value) = requested
+        .map(str::trim)
+        .filter(|v| levels.iter().any(|x| x == v))
+    {
         return value.to_string();
     }
     if let Some(value) = previous.filter(|v| levels.iter().any(|x| x == v)) {
@@ -413,7 +441,9 @@ pub fn apply(
         .entry("options")
         .or_insert_with(|| Value::Object(Map::new()))
         .as_object_mut()
-        .ok_or_else(|| AppError::new("invalid_config", "ZCode provider options must be an object"))?;
+        .ok_or_else(|| {
+            AppError::new("invalid_config", "ZCode provider options must be an object")
+        })?;
     options_obj.insert("baseURL".into(), Value::String(base_url.clone()));
     options_obj.insert("apiKey".into(), Value::String(api_key.into()));
     options_obj.insert("apiKeyRequired".into(), Value::Bool(true));
@@ -422,7 +452,9 @@ pub fn apply(
         .entry("models")
         .or_insert_with(|| Value::Object(Map::new()))
         .as_object_mut()
-        .ok_or_else(|| AppError::new("invalid_config", "ZCode provider models must be an object"))?;
+        .ok_or_else(|| {
+            AppError::new("invalid_config", "ZCode provider models must be an object")
+        })?;
     // Mirror omp semantics: the managed provider only keeps what this apply
     // asked for, so pruning follows both the toggle and the checked catalog.
     let catalog_ids: Vec<&str> = options
@@ -487,9 +519,9 @@ pub fn apply(
         let entry = models
             .entry(extra_id.to_string())
             .or_insert_with(|| json!({}));
-        let entry_obj = entry
-            .as_object_mut()
-            .ok_or_else(|| AppError::new("invalid_config", "ZCode model entry must be an object"))?;
+        let entry_obj = entry.as_object_mut().ok_or_else(|| {
+            AppError::new("invalid_config", "ZCode model entry must be an object")
+        })?;
         let fallback_name = if extra_name.trim().is_empty() || extra_name.trim() == extra_id {
             extra_id
         } else {
@@ -517,7 +549,9 @@ pub fn apply(
             .entry("zcode")
             .or_insert_with(|| Value::Object(Map::new()))
             .as_object_mut()
-            .ok_or_else(|| AppError::new("invalid_config", "ZCode model metadata must be an object"))?;
+            .ok_or_else(|| {
+                AppError::new("invalid_config", "ZCode model metadata must be an object")
+            })?;
         entry_zcode.insert("modified".into(), Value::Bool(true));
     }
 
@@ -543,7 +577,10 @@ pub fn apply(
         || provider_string(verify_provider, "baseURL") != Some(base_url.as_str())
         || verify.get("model").and_then(Value::as_str) != Some(model_ref.as_str())
     {
-        return Err(AppError::new("invalid_config", "ZCode config self-check failed"));
+        return Err(AppError::new(
+            "invalid_config",
+            "ZCode config self-check failed",
+        ));
     }
 
     let mut expected_fields = HashMap::new();
@@ -555,7 +592,10 @@ pub fn apply(
 
     let mut live_summary = live_for_provider(&verify, &provider_id);
     live_summary.insert("reasoning_default".into(), Some(level));
-    live_summary.insert("reasoning_variants".into(), expected_fields.get("reasoning_variants").cloned());
+    live_summary.insert(
+        "reasoning_variants".into(),
+        expected_fields.get("reasoning_variants").cloned(),
+    );
 
     let binding = TargetBinding {
         target: TargetKind::Zcode,
@@ -577,11 +617,16 @@ pub fn apply(
         touched,
         backup_paths,
         live_summary,
-        message: "ZCode config.json updated. Restart ZCode for the provider/model change to take effect.".into(),
+        message:
+            "ZCode config.json updated. Restart ZCode for the provider/model change to take effect."
+                .into(),
     })
 }
 
-pub fn surgical_revert(binding: &TargetBinding, zcode_home_override: Option<&str>) -> AppResult<()> {
+pub fn surgical_revert(
+    binding: &TargetBinding,
+    zcode_home_override: Option<&str>,
+) -> AppResult<()> {
     let path = config_path(zcode_home_override)?;
     if !path.exists() {
         return Ok(());
@@ -641,7 +686,9 @@ pub fn restore_official(
     })
 }
 
-pub fn live_summary(zcode_home_override: Option<&str>) -> AppResult<HashMap<String, Option<String>>> {
+pub fn live_summary(
+    zcode_home_override: Option<&str>,
+) -> AppResult<HashMap<String, Option<String>>> {
     let path = config_path(zcode_home_override)?;
     if !path.exists() {
         return Ok(HashMap::new());
@@ -745,7 +792,10 @@ pub fn detect_status(
         return Ok((ApplyStatus::Applied, None));
     }
     if live.as_ref().is_some_and(has_managed_trace) {
-        return Ok((ApplyStatus::Orphan, Some("untracked managed providers".into())));
+        return Ok((
+            ApplyStatus::Orphan,
+            Some("untracked managed providers".into()),
+        ));
     }
     Ok((ApplyStatus::NotApplied, None))
 }
@@ -780,8 +830,7 @@ pub fn rewrite_base_url(
         return Err(e);
     }
     let verify = read_config(&path)?;
-    let live = provider_value(&verify, provider_id)
-        .and_then(|v| provider_string(v, "baseURL"));
+    let live = provider_value(&verify, provider_id).and_then(|v| provider_string(v, "baseURL"));
     if live != Some(base_url.as_str()) {
         let _ = restore_file(&bak, &path);
         return Err(AppError::new("invalid_config", "self-check baseURL failed"));
@@ -845,10 +894,16 @@ mod tests {
         )
         .unwrap();
         let root = read_config(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
-        assert_eq!(root.get("model").and_then(Value::as_str), Some("xiaobai-site-123/glm-5.3"));
+        assert_eq!(
+            root.get("model").and_then(Value::as_str),
+            Some("xiaobai-site-123/glm-5.3")
+        );
         let provider = provider_value(&root, "xiaobai-site-123").unwrap();
         assert_eq!(provider_string(provider, "apiKey"), Some("sk-secret"));
-        assert_eq!(live_for_provider(&root, "xiaobai-site-123").get("reasoning_default"), Some(&Some("high".into())));
+        assert_eq!(
+            live_for_provider(&root, "xiaobai-site-123").get("reasoning_default"),
+            Some(&Some("high".into()))
+        );
         let (status, _) = detect_status(
             Some(&out.binding),
             Some(&site(SiteProtocol::OpenaiCompatible)),
@@ -926,8 +981,15 @@ mod tests {
         // Family-derived ladder for the extra models; form ladder only for the default.
         let deepseek = models.get("deepseek-chat").unwrap();
         let variants: Vec<&str> = deepseek
-            .get("reasoning").unwrap().get("variants").unwrap()
-            .as_array().unwrap().iter().filter_map(Value::as_str).collect();
+            .get("reasoning")
+            .unwrap()
+            .get("variants")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
         assert_eq!(variants, vec!["off", "high", "max"]);
         assert_eq!(
             deepseek.get("name").and_then(Value::as_str),
@@ -936,7 +998,10 @@ mod tests {
         // Relay-resolved metadata lands as limit/modalities.
         assert_eq!(deepseek.get("limit").unwrap()["context"], json!(131_072));
         assert_eq!(deepseek.get("limit").unwrap()["output"], json!(8_192));
-        assert_eq!(deepseek.get("modalities").unwrap()["input"], json!(["text"]));
+        assert_eq!(
+            deepseek.get("modalities").unwrap()["input"],
+            json!(["text"])
+        );
         // Vision flag adds the image modality on top of the resolved limits.
         let gpt = models.get("gpt-4.1").unwrap();
         assert_eq!(gpt.get("limit").unwrap()["context"], json!(1_000_000));
@@ -962,8 +1027,12 @@ mod tests {
         )
         .unwrap();
         let root = read_config(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
-        let models = provider_value(&root, "xiaobai-site-123").unwrap()
-            .get("models").unwrap().as_object().unwrap();
+        let models = provider_value(&root, "xiaobai-site-123")
+            .unwrap()
+            .get("models")
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert_eq!(models.len(), 1);
         assert!(models.contains_key("glm-5.3"));
     }
@@ -986,8 +1055,12 @@ mod tests {
         )
         .unwrap();
         let root = read_config(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
-        let model = provider_value(&root, "xiaobai-site-123").unwrap()
-            .get("models").unwrap().get("glm-5.3").unwrap();
+        let model = provider_value(&root, "xiaobai-site-123")
+            .unwrap()
+            .get("models")
+            .unwrap()
+            .get("glm-5.3")
+            .unwrap();
         // Manual override beats the family table (glm would be 1M/128K).
         assert_eq!(model["limit"]["context"], json!(500_000));
         assert_eq!(model["limit"]["output"], json!(128_000));
@@ -1001,6 +1074,28 @@ mod tests {
         assert_eq!(
             default_levels_for_model("ox-alpha-free"),
             vec!["low", "high", "max"]
+        );
+    }
+
+    #[test]
+    fn ox_alpha_replaces_stale_or_requested_off_with_safe_levels() {
+        let existing = json!({
+            "reasoning": {
+                "enabled": true,
+                "variants": ["off", "high", "max"],
+                "defaultVariant": "off"
+            }
+        });
+        let levels = normalize_levels(
+            "ox-alpha-free",
+            &["off".into(), "high".into(), "max".into()],
+            Some(&existing),
+        );
+
+        assert_eq!(levels, vec!["low", "high", "max"]);
+        assert_eq!(
+            choose_level(&levels, Some("off"), existing_default(Some(&existing)),),
+            "max"
         );
     }
 

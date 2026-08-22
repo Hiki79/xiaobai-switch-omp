@@ -5,9 +5,11 @@ import {
   claudeEffortLevelsForModel,
   codexReasoningLevelsForModel,
   defaultReasoningLevel,
+  dshReasoningLevelsForModel,
   hydrateCatalogSelection,
   hydrateClaudeForm,
   hydrateCodexForm,
+  hydrateDshForm,
   hydrateOmpForm,
   hydrateZcodeForm,
   ompReasoningLevelsForModel,
@@ -401,6 +403,77 @@ describe("hydrateZcodeForm", () => {
 
   it("falls back to the low/high/max ladder for unknown families", () => {
     expect(zcodeReasoningLevelsForModel("ox-alpha-free")).toEqual(["low", "high", "max"]);
+  });
+
+  it("rejects stale off variants for always-thinking ox-alpha models", () => {
+    const model: SiteModel = {
+      id: "ox",
+      siteId: "shuai",
+      modelId: "ox-alpha-free",
+      displayName: "OX Alpha Free",
+      ownedBy: null,
+      raw: { reasoning: { variants: ["off", "high", "max"] } },
+    };
+    const live = status({
+      kind: "zcode",
+      appliedSiteId: "shuai",
+      liveSummary: {
+        model: "xiaobai-shuai/ox-alpha-free",
+        reasoning_variants: "off,high,max",
+        reasoning_default: "off",
+      },
+    });
+
+    expect(zcodeReasoningLevelsForModel("ox-alpha-free", model, live)).toEqual([
+      "low",
+      "high",
+      "max",
+    ]);
+    expect(hydrateZcodeForm(site({ id: "shuai", selectedModelId: "ox-alpha-free" }), live, [model]))
+      .toMatchObject({ reasoningLevels: ["low", "high", "max"], reasoningLevel: "max" });
+  });
+});
+
+describe("hydrateDshForm", () => {
+  it("hydrates pi-ai reasoning efforts from the live provider", () => {
+    const defaults = hydrateDshForm(
+      site({ id: "shuai", selectedModelId: "deepseek-v4" }),
+      status({
+        kind: "dsh",
+        appliedSiteId: "shuai",
+        liveSummary: {
+          model: "deepseek-v4",
+          models: "2",
+          model_ids: "deepseek-v4,glm-5.3",
+          reasoning_efforts: "off,high,max",
+          reasoning_effort: "high",
+        },
+      }),
+    );
+    expect(defaults).toMatchObject({
+      modelId: "deepseek-v4",
+      writeAllModels: true,
+      reasoningLevels: ["off", "high", "max"],
+      reasoningLevel: "high",
+    });
+  });
+
+  it("removes off from stale ox-alpha dsh configuration", () => {
+    expect(dshReasoningLevelsForModel("ox-alpha-free")).toEqual(["low", "high", "max"]);
+    const defaults = hydrateDshForm(
+      site({ id: "shuai", selectedModelId: "ox-alpha-free" }),
+      status({
+        kind: "dsh",
+        appliedSiteId: "shuai",
+        liveSummary: {
+          model: "ox-alpha-free",
+          reasoning_efforts: "off,high,max",
+          reasoning_effort: "off",
+        },
+      }),
+    );
+    expect(defaults.reasoningLevels).toEqual(["low", "high", "max"]);
+    expect(defaults.reasoningLevel).toBe("max");
   });
 });
 

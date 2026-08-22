@@ -166,9 +166,10 @@ pub fn import_site_from_deep_link_conn(
             protocol: Some(protocol.as_str().to_string()),
             claude_auth_key_style: None,
             notes,
-            capabilities: input.capabilities.as_ref().map(|incoming| {
-                merge_codex_capabilities(&Default::default(), incoming)
-            }),
+            capabilities: input
+                .capabilities
+                .as_ref()
+                .map(|incoming| merge_codex_capabilities(&Default::default(), incoming)),
         },
     )?;
 
@@ -399,13 +400,25 @@ mod tests {
         assert_eq!(created.site.capabilities.get("codex-vision"), Some(&true));
         assert_eq!(created.site.capabilities.get("codex-search"), Some(&false));
 
-        let mut same = input("Relay", &["https://a.example.com"], "sk-example", None, None);
+        let mut same = input(
+            "Relay",
+            &["https://a.example.com"],
+            "sk-example",
+            None,
+            None,
+        );
         same.capabilities = None;
         let reused = import_site_from_deep_link_conn(&conn, &crypto, same).unwrap();
         assert!(reused.reused);
         assert_eq!(reused.site.capabilities.get("codex-compact"), Some(&true));
 
-        let mut updated = input("Relay", &["https://a.example.com"], "sk-example", None, None);
+        let mut updated = input(
+            "Relay",
+            &["https://a.example.com"],
+            "sk-example",
+            None,
+            None,
+        );
         let mut next = std::collections::HashMap::new();
         next.insert("codex-search".into(), true);
         updated.capabilities = Some(next);

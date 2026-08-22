@@ -120,6 +120,12 @@ pub fn delete_site(
                         settings.zcode_home_override.as_deref(),
                     );
                 }
+                crate::domain::TargetKind::Dsh => {
+                    let _ = crate::adapters::dsh::surgical_revert(
+                        &b,
+                        settings.dsh_home_override.as_deref(),
+                    );
+                }
             }
             state
                 .db

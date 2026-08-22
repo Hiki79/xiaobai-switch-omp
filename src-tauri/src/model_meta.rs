@@ -119,7 +119,9 @@ mod tests {
 
     #[test]
     fn detects_image_modality() {
-        assert!(vision_from_raw(&json!({"input_modalities": ["text", "image"]})));
+        assert!(vision_from_raw(
+            &json!({"input_modalities": ["text", "image"]})
+        ));
         assert!(vision_from_raw(&json!({"modalities": ["image"]})));
         assert!(!vision_from_raw(&json!({"modalities": ["text"]})));
         assert!(!vision_from_raw(&json!({"id": "m"})));
@@ -128,10 +130,7 @@ mod tests {
     #[test]
     fn raw_wins_over_family_table() {
         let raw = json!({"context_window": 64000});
-        assert_eq!(
-            resolve_limits("glm-5.3", Some(&raw)),
-            Some((64_000, None))
-        );
+        assert_eq!(resolve_limits("glm-5.3", Some(&raw)), Some((64_000, None)));
     }
 
     #[test]

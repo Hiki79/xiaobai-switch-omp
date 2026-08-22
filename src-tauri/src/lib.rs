@@ -18,6 +18,7 @@ mod model_probe;
 mod models_fetch;
 mod paths;
 mod quota_probe;
+mod reasoning_meta;
 mod redact;
 mod repo;
 mod route_switch;

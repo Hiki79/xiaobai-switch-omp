@@ -1,6 +1,4 @@
-use crate::domain::{
-    AppSettings, QuotaProbeStatus, QuotaSource, SiteQuota, SiteRow,
-};
+use crate::domain::{AppSettings, QuotaProbeStatus, QuotaSource, SiteQuota, SiteRow};
 use crate::error::AppResult;
 use crate::model_probe::sanitize_error;
 use crate::url_normalize::normalize_base_url;
@@ -125,10 +123,7 @@ pub fn normalize_quota_unit(raw: &str) -> String {
 pub fn usage_to_usd(total_usage: f64, limit: Option<f64>) -> f64 {
     let scaled = total_usage / 100.0;
     if let Some(limit) = limit {
-        if limit > 0.0
-            && scaled > limit * 1.5
-            && (0.0..=limit * 1.5).contains(&total_usage)
-        {
+        if limit > 0.0 && scaled > limit * 1.5 && (0.0..=limit * 1.5).contains(&total_usage) {
             return total_usage;
         }
     }
@@ -251,10 +246,7 @@ pub fn parse_token_usage(value: &Value) -> Option<TokenUsage> {
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let unlimited = flag && !total.is_some_and(|t| t > 0.0 && t < UNLIMITED_USD);
-    let expires_at = data
-        .get("expires_at")
-        .and_then(json_i64)
-        .filter(|v| *v > 0);
+    let expires_at = data.get("expires_at").and_then(json_i64).filter(|v| *v > 0);
     Some(TokenUsage {
         remaining,
         used,
@@ -514,20 +506,10 @@ pub fn interpret_round(
             None,
         ));
     }
-    RoundOutcome::Quiet(quiet(
-        QuotaProbeStatus::Unsupported,
-        None,
-        latency_ms,
-        None,
-    ))
+    RoundOutcome::Quiet(quiet(QuotaProbeStatus::Unsupported, None, latency_ms, None))
 }
 
-async fn fetch_hit(
-    client: &reqwest::Client,
-    url: &str,
-    api_key: &str,
-    expected: Expected,
-) -> Hit {
+async fn fetch_hit(client: &reqwest::Client, url: &str, api_key: &str, expected: Expected) -> Hit {
     match client
         .get(url)
         .bearer_auth(api_key)
@@ -661,15 +643,17 @@ pub async fn probe_quota(
                 ));
             }
             let round = fetch_round(&client, &origin, api_key).await;
-            Ok(match finish_round(&round, start, fetched_at, api_key, false) {
-                RoundOutcome::Available(q) | RoundOutcome::Quiet(q) => q,
-                RoundOutcome::Fallback => quiet(
-                    QuotaProbeStatus::Unsupported,
-                    None,
-                    start.elapsed().as_millis() as u64,
-                    None,
-                ),
-            })
+            Ok(
+                match finish_round(&round, start, fetched_at, api_key, false) {
+                    RoundOutcome::Available(q) | RoundOutcome::Quiet(q) => q,
+                    RoundOutcome::Fallback => quiet(
+                        QuotaProbeStatus::Unsupported,
+                        None,
+                        start.elapsed().as_millis() as u64,
+                        None,
+                    ),
+                },
+            )
         }
     }
 }
@@ -684,25 +668,9 @@ mod tests {
         NaiveDate::from_ymd_opt(2026, 8, 21).unwrap()
     }
 
-    fn interpret(
-        grants: Hit,
-        sub: Hit,
-        usage: Hit,
-        token: Hit,
-        fallback: bool,
-    ) -> RoundOutcome {
+    fn interpret(grants: Hit, sub: Hit, usage: Hit, token: Hit, fallback: bool) -> RoundOutcome {
         interpret_round(
-            &grants,
-            &sub,
-            &usage,
-            &token,
-            "g",
-            "s",
-            "u",
-            "t",
-            1,
-            10,
-            fallback,
+            &grants, &sub, &usage, &token, "g", "s", "u", "t", 1, 10, fallback,
         )
     }
 
@@ -835,7 +803,11 @@ mod tests {
             Hit::Unsupported
         );
         assert_eq!(
-            classify_status(403, r#"{"error":{"message":"forbidden"}}"#, Expected::Grants),
+            classify_status(
+                403,
+                r#"{"error":{"message":"forbidden"}}"#,
+                Expected::Grants
+            ),
             Hit::Unauthorized
         );
     }
@@ -873,7 +845,9 @@ mod tests {
             limit_usd: Some(100_000_000.0),
             expires_at: None,
         });
-        let usage = Hit::Usage(Usage { total_usage: 8.9686 });
+        let usage = Hit::Usage(Usage {
+            total_usage: 8.9686,
+        });
         let token = Hit::Token(TokenUsage {
             remaining: Some(999.69),
             used: Some(0.31),
@@ -941,7 +915,9 @@ mod tests {
             limit_usd: Some(20.0),
             expires_at: None,
         });
-        let usage = Hit::Usage(Usage { total_usage: 2500.0 });
+        let usage = Hit::Usage(Usage {
+            total_usage: 2500.0,
+        });
         let outcome = interpret(grants, sub, usage, Hit::Unsupported, true);
         match outcome {
             RoundOutcome::Available(q) => {

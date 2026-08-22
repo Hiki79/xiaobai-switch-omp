@@ -4,6 +4,7 @@ import { ApplySidebar } from "@/components/apply/ApplySidebar";
 import { ApplyPanelSkeleton } from "@/components/apply/ApplyPanelSkeleton";
 import { ClaudeApplyPanel } from "@/components/apply/ClaudeApplyPanel";
 import { CodexApplyPanel } from "@/components/apply/CodexApplyPanel";
+import { DshApplyPanel } from "@/components/apply/DshApplyPanel";
 import { OmpApplyPanel } from "@/components/apply/OmpApplyPanel";
 import { ZcodeApplyPanel } from "@/components/apply/ZcodeApplyPanel";
 import { useDeferredTabContent } from "@/hooks/useDeferredTabContent";
@@ -86,6 +87,18 @@ export function ApplyPage() {
             aria-hidden={applyTab !== "zcode"}
           >
             <ZcodeApplyPanel />
+          </div>
+        )}
+        {mounted.has("dsh") && (
+          <div
+            className="h-full min-h-0"
+            style={{
+              display: applyTab === "dsh" && !showSkeleton ? "flex" : "none",
+              flexDirection: "column",
+            }}
+            aria-hidden={applyTab !== "dsh"}
+          >
+            <DshApplyPanel />
           </div>
         )}
       </div>

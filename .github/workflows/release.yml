@@ -97,26 +97,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            platform: macos-arm64
-            args: --target aarch64-apple-darwin
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            platform: macos-x64
-            args: --target x86_64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: windows-x64
-            args: --target x86_64-pc-windows-msvc
+            args: --target x86_64-pc-windows-msvc --bundles nsis
             msvc_arch: amd64
-          # Private repos cannot use the free windows-11-arm label; cross-compile
-          # ARM64 from windows-latest. WiX MSI does not support ARM64 — NSIS only.
-          - os: windows-latest
-            target: aarch64-pc-windows-msvc
-            platform: windows-arm64
-            args: --target aarch64-pc-windows-msvc --bundles nsis
-            msvc_arch: amd64_arm64
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
@@ -167,16 +152,7 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
-      - name: Verify macOS app bundle signature
-        if: startsWith(matrix.platform, 'macos-')
-        run: |
-          set -euo pipefail
-          APP="src-tauri/target/${{ matrix.target }}/release/bundle/macos/XiaoBaiSwitch.app"
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          codesign -dv --verbose=2 "$APP" 2>&1 | grep -q "Sealed Resources version="
-
       - name: Package Windows portable (zip)
-        if: startsWith(matrix.platform, 'windows-')
         shell: pwsh
         run: |
           # Do not put a trailing comma after Join-Path args — PowerShell
@@ -202,7 +178,6 @@ jobs:
           Write-Host "Created $zipName from $exe"
 
       - name: Upload Windows portable to release
-        if: startsWith(matrix.platform, 'windows-')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}

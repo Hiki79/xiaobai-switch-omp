@@ -72,6 +72,12 @@ pub fn sync_applied_urls(state: &AppState, site: &SiteRow) -> AppResult<Vec<Appl
                 settings.zcode_home_override.as_deref(),
                 &backup_root,
             ),
+            TargetKind::Dsh => crate::adapters::dsh::rewrite_base_url(
+                site,
+                &binding,
+                settings.dsh_home_override.as_deref(),
+                &backup_root,
+            ),
         };
 
         match rewrite {

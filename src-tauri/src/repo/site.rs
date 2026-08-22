@@ -594,6 +594,12 @@ mod tests {
         .unwrap();
         assert_eq!(updated.capabilities.get("codex-search"), Some(&true));
         assert_eq!(updated.capabilities.get("claude-foo"), Some(&true));
-        assert_eq!(get_site(&conn, &created.id).unwrap().capabilities.get("codex-search"), Some(&true));
+        assert_eq!(
+            get_site(&conn, &created.id)
+                .unwrap()
+                .capabilities
+                .get("codex-search"),
+            Some(&true)
+        );
     }
 }

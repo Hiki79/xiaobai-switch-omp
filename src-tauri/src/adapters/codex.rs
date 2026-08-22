@@ -1270,9 +1270,29 @@ mod capability_write_tests {
 
     #[test]
     fn catalog_modalities_follow_understanding() {
-        let off = build_model_catalog(&[CatalogModel { model_id: "m".into(), display_name: "M".into(), ..Default::default() }], "S", false, &[], None);
+        let off = build_model_catalog(
+            &[CatalogModel {
+                model_id: "m".into(),
+                display_name: "M".into(),
+                ..Default::default()
+            }],
+            "S",
+            false,
+            &[],
+            None,
+        );
         assert_eq!(off["models"][0]["input_modalities"], json!(["text"]));
-        let on = build_model_catalog(&[CatalogModel { model_id: "m".into(), display_name: "M".into(), ..Default::default() }], "S", true, &[], None);
+        let on = build_model_catalog(
+            &[CatalogModel {
+                model_id: "m".into(),
+                display_name: "M".into(),
+                ..Default::default()
+            }],
+            "S",
+            true,
+            &[],
+            None,
+        );
         assert_eq!(off["models"][0]["input_modalities"], json!(["text"]));
         assert_eq!(
             on["models"][0]["input_modalities"],
@@ -1282,7 +1302,17 @@ mod capability_write_tests {
 
     #[test]
     fn catalog_reasoning_levels_follow_options() {
-        let stock = build_model_catalog(&[CatalogModel { model_id: "m".into(), display_name: "M".into(), ..Default::default() }], "S", false, &[], None);
+        let stock = build_model_catalog(
+            &[CatalogModel {
+                model_id: "m".into(),
+                display_name: "M".into(),
+                ..Default::default()
+            }],
+            "S",
+            false,
+            &[],
+            None,
+        );
         let stock_efforts: Vec<&str> = stock["models"][0]["supported_reasoning_levels"]
             .as_array()
             .unwrap()
@@ -1290,10 +1320,17 @@ mod capability_write_tests {
             .map(|l| l["effort"].as_str().unwrap())
             .collect();
         assert_eq!(stock_efforts, vec!["low", "medium", "high", "xhigh"]);
-        assert_eq!(stock["models"][0]["default_reasoning_level"], json!("medium"));
+        assert_eq!(
+            stock["models"][0]["default_reasoning_level"],
+            json!("medium")
+        );
 
         let custom = build_model_catalog(
-            &[CatalogModel { model_id: "m".into(), display_name: "M".into(), ..Default::default() }],
+            &[CatalogModel {
+                model_id: "m".into(),
+                display_name: "M".into(),
+                ..Default::default()
+            }],
             "S",
             false,
             &["minimal".into(), "high".into(), "max".into()],
@@ -1306,7 +1343,10 @@ mod capability_write_tests {
             .map(|l| l["effort"].as_str().unwrap())
             .collect();
         assert_eq!(efforts, vec!["minimal", "high", "max"]);
-        assert_eq!(custom["models"][0]["default_reasoning_level"], json!("high"));
+        assert_eq!(
+            custom["models"][0]["default_reasoning_level"],
+            json!("high")
+        );
     }
 
     #[test]
@@ -1382,7 +1422,17 @@ mod catalog_schema_tests {
 
     #[test]
     fn catalog_contains_codex_required_fields() {
-        let catalog = build_model_catalog(&[CatalogModel { model_id: "m".into(), display_name: "M".into(), ..Default::default() }], "S", false, &[], None);
+        let catalog = build_model_catalog(
+            &[CatalogModel {
+                model_id: "m".into(),
+                display_name: "M".into(),
+                ..Default::default()
+            }],
+            "S",
+            false,
+            &[],
+            None,
+        );
         let model = &catalog["models"][0];
         assert_eq!(model["shell_type"], json!("unified_exec"));
         assert_eq!(model["support_verbosity"], json!(false));

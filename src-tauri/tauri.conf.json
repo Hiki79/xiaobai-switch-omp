@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "createUpdaterArtifacts": true,
     "category": "DeveloperTool",
     "shortDescription": "Site-driven Claude Code & Codex config switcher",

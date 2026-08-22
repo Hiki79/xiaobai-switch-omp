@@ -112,6 +112,9 @@ export const useApplyStore = create<ApplyState>((set, get) => ({
         zcodeContextWindow: req.zcodeContextWindow ?? null,
         zcodeReasoningLevels: req.zcodeReasoningLevels ?? null,
         zcodeReasoningLevel: req.zcodeReasoningLevel ?? null,
+        dshWriteAllModels: req.dshWriteAllModels ?? false,
+        dshReasoningLevels: req.dshReasoningLevels ?? null,
+        dshReasoningLevel: req.dshReasoningLevel ?? null,
         catalogModelIds: req.catalogModelIds ?? null,
       });
       set({ lastResult: result });

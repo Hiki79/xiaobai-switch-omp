@@ -12,6 +12,11 @@ vi.mock("@lobehub/icons/es/Codex", () => ({
     createElement("span", { "data-icon": "codex", ...props }),
 }));
 
+vi.mock("@lobehub/icons/es/DeepSeek", () => ({
+  default: (props: { size?: number }) =>
+    createElement("span", { "data-icon": "deepseek", ...props }),
+}));
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({

@@ -7,6 +7,7 @@ export const TARGET_LABEL_KEY: Record<TargetKind, string> = {
   codex: "apply.targetCodex",
   omp: "apply.targetOmp",
   zcode: "apply.targetZcode",
+  dsh: "apply.targetDsh",
 };
 
 export const RESTORE_OFFICIAL_HINT_KEY: Record<TargetKind, string> = {
@@ -14,6 +15,7 @@ export const RESTORE_OFFICIAL_HINT_KEY: Record<TargetKind, string> = {
   codex: "apply.restoreOfficialCodexHint",
   omp: "apply.restoreOfficialOmpHint",
   zcode: "apply.restoreOfficialZcodeHint",
+  dsh: "apply.restoreOfficialDshHint",
 };
 
 export const RESTORE_OFFICIAL_OK_KEY: Record<TargetKind, string> = {
@@ -21,6 +23,7 @@ export const RESTORE_OFFICIAL_OK_KEY: Record<TargetKind, string> = {
   codex: "apply.restoreOfficialCodexOk",
   omp: "apply.restoreOfficialOmpOk",
   zcode: "apply.restoreOfficialZcodeOk",
+  dsh: "apply.restoreOfficialDshOk",
 };
 
 export const APPLY_RESULT_OK_KEY: Record<TargetKind, string> = {
@@ -28,4 +31,5 @@ export const APPLY_RESULT_OK_KEY: Record<TargetKind, string> = {
   codex: "apply.resultCodexOk",
   omp: "apply.resultOmpOk",
   zcode: "apply.resultZcodeOk",
+  dsh: "apply.resultDshOk",
 };

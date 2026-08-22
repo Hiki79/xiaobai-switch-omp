@@ -1,6 +1,7 @@
 pub mod atomic;
 pub mod claude_code;
 pub mod codex;
+pub mod dsh;
 pub mod omp;
 pub mod zcode;
 

@@ -68,6 +68,7 @@ pub enum TargetKind {
     Codex,
     Omp,
     Zcode,
+    Dsh,
 }
 
 impl TargetKind {
@@ -77,6 +78,7 @@ impl TargetKind {
             Self::Codex => "codex",
             Self::Omp => "omp",
             Self::Zcode => "zcode",
+            Self::Dsh => "dsh",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
@@ -85,6 +87,7 @@ impl TargetKind {
             "codex" => Some(Self::Codex),
             "omp" => Some(Self::Omp),
             "zcode" => Some(Self::Zcode),
+            "dsh" => Some(Self::Dsh),
             _ => None,
         }
     }
@@ -417,6 +420,22 @@ pub struct ZcodeApplyOptions {
     pub reasoning_level: Option<String>,
 }
 
+/// Extra options for dsh (DeepSeek Harness) apply. dsh exposes reasoning
+/// levels per model ("reasoningEfforts" keys, pi-ai's level set) and stores
+/// the default selection separately in the `agent-default-model` section.
+#[derive(Debug, Clone, Default)]
+pub struct DshApplyOptions {
+    pub write_all_models: bool,
+    /// Site models written under the managed provider when `write_all_models`
+    /// is true; extra models are pruned when it is false.
+    pub catalog_models: Vec<CatalogModel>,
+    /// Effort ladder written into the default model's `reasoningEfforts`;
+    /// accepted keys are pi-ai's off|minimal|low|medium|high|xhigh|max.
+    pub reasoning_levels: Vec<String>,
+    /// Default level written into `agent-default-model.reasoningEffort`.
+    pub reasoning_level: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyTargetResult {
@@ -452,6 +471,8 @@ pub struct AppSettings {
     pub omp_home_override: Option<String>,
     #[serde(default)]
     pub zcode_home_override: Option<String>,
+    #[serde(default)]
+    pub dsh_home_override: Option<String>,
     pub codex_env_inject_mode: String,
     pub force_exclusive_claude_auth_key: bool,
     #[serde(default = "default_true")]
@@ -541,6 +562,7 @@ impl Default for AppSettings {
             codex_home_override: None,
             omp_home_override: None,
             zcode_home_override: None,
+            dsh_home_override: None,
             codex_env_inject_mode: "auto".into(),
             force_exclusive_claude_auth_key: false,
             auto_check_update: true,

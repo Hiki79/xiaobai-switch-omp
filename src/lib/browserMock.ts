@@ -32,6 +32,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   codexHomeOverride: null,
   ompHomeOverride: null,
   zcodeHomeOverride: null,
+  dshHomeOverride: null,
   codexEnvInjectMode: "auto",
   forceExclusiveClaudeAuthKey: false,
   autoCheckUpdate: true,
@@ -98,6 +99,21 @@ function defaultTargetStatuses(): TargetLiveStatus[] {
       installed: false,
       version: null,
       configPath: "~/.zcode/v2/config.json",
+      status: "not_applied",
+      appliedSiteId: null,
+      appliedSiteName: null,
+      appliedModelId: null,
+      providerId: null,
+      orphan: false,
+      liveSummary: {},
+      lastAppliedAt: null,
+      staleReason: null,
+    },
+    {
+      kind: "dsh",
+      installed: false,
+      version: null,
+      configPath: "~/.dsh/settings.yaml",
       status: "not_applied",
       appliedSiteId: null,
       appliedSiteName: null,
@@ -452,6 +468,8 @@ export async function handleBrowserCommand<T>(
               ? Boolean(args?.ompWriteAllModels)
               : row.kind === "zcode"
                 ? Boolean(args?.zcodeWriteAllModels)
+                : row.kind === "dsh"
+                  ? Boolean(args?.dshWriteAllModels)
                 : false;
         const allIds = (models.get(siteId) ?? []).map((m) => m.modelId);
         const written = writeAll
@@ -547,6 +565,7 @@ export async function handleBrowserCommand<T>(
         { kind: "codex", installed: false, version: null, path: null },
         { kind: "omp", installed: false, version: null, path: null },
         { kind: "zcode", installed: false, version: null, path: null },
+        { kind: "dsh", installed: false, version: null, path: null },
       ];
       return tools as T;
     }

@@ -41,11 +41,17 @@ fn resolve_yaml_pair(dir: &Path, stem: &str) -> PathBuf {
 }
 
 pub fn models_path(omp_home_override: Option<&str>) -> AppResult<PathBuf> {
-    Ok(resolve_yaml_pair(&resolve_omp_home(omp_home_override)?, MODELS_STEM))
+    Ok(resolve_yaml_pair(
+        &resolve_omp_home(omp_home_override)?,
+        MODELS_STEM,
+    ))
 }
 
 pub fn config_path(omp_home_override: Option<&str>) -> AppResult<PathBuf> {
-    Ok(resolve_yaml_pair(&resolve_omp_home(omp_home_override)?, CONFIG_STEM))
+    Ok(resolve_yaml_pair(
+        &resolve_omp_home(omp_home_override)?,
+        CONFIG_STEM,
+    ))
 }
 
 fn read_yaml(path: &Path) -> AppResult<Mapping> {
@@ -129,9 +135,8 @@ fn model_entry(id: &str, name: &str) -> Yaml {
 
 /// Effort levels omp understands on the `:level` role suffix and in
 /// `thinking.levels` (oh-my-pi docs: off|minimal|low|medium|high|xhigh|max).
-pub const OMP_EFFORT_LEVELS: [&str; 7] = [
-    "off", "minimal", "low", "medium", "high", "xhigh", "max",
-];
+pub const OMP_EFFORT_LEVELS: [&str; 7] =
+    ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 fn sanitize_level(raw: &str) -> Option<String> {
     let value = raw.trim().to_ascii_lowercase();
@@ -234,8 +239,8 @@ pub fn read_models_yaml(path: &Path) -> AppResult<Mapping> {
 /// adapter's snake_case style so the frontend renders them uniformly.
 pub fn summary_from_docs(models: &Mapping, cfg: &Mapping) -> HashMap<String, Option<String>> {
     let mut out = HashMap::new();
-    let default_selector = get_mapping(cfg, "modelRoles")
-        .and_then(|roles| get_str(roles, "default"));
+    let default_selector =
+        get_mapping(cfg, "modelRoles").and_then(|roles| get_str(roles, "default"));
     let providers = get_mapping(models, "providers");
 
     // Locate the managed provider entry: the one the default role points at,
@@ -251,7 +256,10 @@ pub fn summary_from_docs(models: &Mapping, cfg: &Mapping) -> HashMap<String, Opt
     if found.is_none() {
         if let Some(provs) = providers {
             for (k, v) in provs.iter() {
-                if k.as_str().unwrap_or_default().starts_with(MANAGED_PROVIDER_PREFIX) {
+                if k.as_str()
+                    .unwrap_or_default()
+                    .starts_with(MANAGED_PROVIDER_PREFIX)
+                {
                     if let Some(p) = v.as_mapping() {
                         found = Some((k.as_str().unwrap_or_default(), p));
                     }
@@ -317,9 +325,7 @@ pub fn summary_from_docs(models: &Mapping, cfg: &Mapping) -> HashMap<String, Opt
     out
 }
 
-pub fn live_summary(
-    omp_home_override: Option<&str>,
-) -> AppResult<HashMap<String, Option<String>>> {
+pub fn live_summary(omp_home_override: Option<&str>) -> AppResult<HashMap<String, Option<String>>> {
     let home = resolve_omp_home(omp_home_override)?;
     let models_p = resolve_yaml_pair(&home, MODELS_STEM);
     if !models_p.exists() {
@@ -400,11 +406,7 @@ pub fn apply(
     // ---- config.yml modelRoles.default ----
     // The `:level` suffix sets omp's default thinking level for the model.
     let mut selector = format!("{provider_id}/{}", model_id.trim());
-    if let Some(level) = options
-        .reasoning_level
-        .as_deref()
-        .and_then(sanitize_level)
-    {
+    if let Some(level) = options.reasoning_level.as_deref().and_then(sanitize_level) {
         selector.push(':');
         selector.push_str(&level);
     }
@@ -431,10 +433,12 @@ pub fn apply(
         .unwrap_or(false);
     if !ok {
         rollback(&backups);
-        return Err(AppError::new("invalid_config", "self-check provider failed"));
+        return Err(AppError::new(
+            "invalid_config",
+            "self-check provider failed",
+        ));
     }
-    if get_mapping(&verify_cfg, "modelRoles")
-        .and_then(|r| get_str(r, "default"))
+    if get_mapping(&verify_cfg, "modelRoles").and_then(|r| get_str(r, "default"))
         != Some(selector.as_str())
     {
         rollback(&backups);
@@ -657,18 +661,12 @@ pub fn detect_status(
                 match k.as_str() {
                     "base_url" => {
                         if get_str(prov, "baseUrl") != Some(expected.as_str()) {
-                            return Ok((
-                                ApplyStatus::Stale,
-                                Some(format!("{k} mismatch")),
-                            ));
+                            return Ok((ApplyStatus::Stale, Some(format!("{k} mismatch"))));
                         }
                     }
                     "api" => {
                         if get_str(prov, "api") != Some(expected.as_str()) {
-                            return Ok((
-                                ApplyStatus::Stale,
-                                Some(format!("{k} mismatch")),
-                            ));
+                            return Ok((ApplyStatus::Stale, Some(format!("{k} mismatch"))));
                         }
                     }
                     "model" => {
@@ -704,7 +702,12 @@ pub fn detect_status(
             let def = get_mapping(&cfg, "modelRoles")
                 .and_then(|r| get_str(r, "default"))
                 .unwrap_or_default();
-            if def != b.expected_fields.get("default_model").map(String::as_str).unwrap_or("") {
+            if def
+                != b.expected_fields
+                    .get("default_model")
+                    .map(String::as_str)
+                    .unwrap_or("")
+            {
                 return Ok((ApplyStatus::Stale, Some("default model changed".into())));
             }
             return Ok((ApplyStatus::Applied, None));
@@ -854,7 +857,10 @@ mod tests {
         assert!(prov.get(&s("authHeader")).is_none());
 
         let cfg = read_yaml(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
-        let sel = format!("{}/claude-sonnet-x", out.binding.provider_id.clone().unwrap());
+        let sel = format!(
+            "{}/claude-sonnet-x",
+            out.binding.provider_id.clone().unwrap()
+        );
         assert_eq!(
             get_str(get_mapping(&cfg, "modelRoles").unwrap(), "default"),
             Some(sel.as_str())
@@ -885,7 +891,13 @@ mod tests {
         )
         .unwrap();
         let models = read_yaml(&models_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
-        let prov = get_mapping(&models, "providers").unwrap().values().next().unwrap().as_mapping().unwrap();
+        let prov = get_mapping(&models, "providers")
+            .unwrap()
+            .values()
+            .next()
+            .unwrap()
+            .as_mapping()
+            .unwrap();
         assert_eq!(get_str(prov, "api"), Some("openai-responses"));
     }
 
@@ -896,16 +908,18 @@ mod tests {
         let opts = OmpApplyOptions {
             write_all_models: false,
             catalog_models: vec![],
-            reasoning_levels: vec![
-                "off".into(),
-                "HIGH".into(),
-                "max".into(),
-                "bogus".into(),
-            ],
+            reasoning_levels: vec!["off".into(), "HIGH".into(), "max".into(), "bogus".into()],
             reasoning_level: Some("max".into()),
         };
-        let out = apply(&site, "sk", "glm-5.3", &opts, override_of(&home), &home.join("bk"))
-            .unwrap();
+        let out = apply(
+            &site,
+            "sk",
+            "glm-5.3",
+            &opts,
+            override_of(&home),
+            &home.join("bk"),
+        )
+        .unwrap();
         let pid = out.binding.provider_id.clone().unwrap();
 
         let models = read_yaml(&models_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
@@ -944,7 +958,10 @@ mod tests {
 
         // Summary surfaces the bare model plus the reasoning level.
         let summary = out.live_summary;
-        assert_eq!(summary.get("model").and_then(|v| v.as_deref()), Some("glm-5.3"));
+        assert_eq!(
+            summary.get("model").and_then(|v| v.as_deref()),
+            Some("glm-5.3")
+        );
         assert_eq!(
             summary.get("reasoning_level").and_then(|v| v.as_deref()),
             Some("max")
@@ -983,10 +1000,7 @@ mod tests {
         let prov = provs.values().next().unwrap().as_mapping().unwrap();
         assert_eq!(get_str(prov, "api"), Some("anthropic-messages"));
         assert_eq!(prov.get(&s("authHeader")), Some(&Yaml::Bool(true)));
-        assert_eq!(
-            prov.get(&s("disableStrictTools")),
-            Some(&Yaml::Bool(true))
-        );
+        assert_eq!(prov.get(&s("disableStrictTools")), Some(&Yaml::Bool(true)));
     }
 
     #[test]
@@ -998,9 +1012,21 @@ mod tests {
             reasoning_levels: vec![],
             reasoning_level: None,
             catalog_models: vec![
-                CatalogModel { model_id: "m1".into(), display_name: "Model One".into(), ..Default::default() },
-                CatalogModel { model_id: "m2".into(), display_name: String::new(), ..Default::default() },
-                CatalogModel { model_id: "claude-sonnet-x".into(), display_name: "Selected".into(), ..Default::default() },
+                CatalogModel {
+                    model_id: "m1".into(),
+                    display_name: "Model One".into(),
+                    ..Default::default()
+                },
+                CatalogModel {
+                    model_id: "m2".into(),
+                    display_name: String::new(),
+                    ..Default::default()
+                },
+                CatalogModel {
+                    model_id: "claude-sonnet-x".into(),
+                    display_name: "Selected".into(),
+                    ..Default::default()
+                },
             ],
         };
         apply(
@@ -1015,10 +1041,7 @@ mod tests {
         let models = read_yaml(&models_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
         let provs = get_mapping(&models, "providers").unwrap();
         let prov = provs.values().next().unwrap().as_mapping().unwrap();
-        let list = prov
-            .get(&s("models"))
-            .and_then(Yaml::as_sequence)
-            .unwrap();
+        let list = prov.get(&s("models")).and_then(Yaml::as_sequence).unwrap();
         assert_eq!(list.len(), 3);
         let named = list
             .iter()
@@ -1031,7 +1054,10 @@ mod tests {
             .unwrap()
             .as_mapping()
             .unwrap();
-        assert_eq!(named.get(&s("name")).and_then(Yaml::as_str), Some("Model One"));
+        assert_eq!(
+            named.get(&s("name")).and_then(Yaml::as_str),
+            Some("Model One")
+        );
     }
 
     #[test]
@@ -1043,8 +1069,15 @@ mod tests {
         )
         .unwrap();
         let site = sample_site(SiteProtocol::OpenaiCompatible);
-        apply(&site, "sk", "m", &OmpApplyOptions::default(), override_of(&home), &home.join("bk"))
-            .unwrap();
+        apply(
+            &site,
+            "sk",
+            "m",
+            &OmpApplyOptions::default(),
+            override_of(&home),
+            &home.join("bk"),
+        )
+        .unwrap();
         let text = fs::read_to_string(models_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
         assert!(text.contains("mine"), "user provider dropped:\n{text}");
         let models = read_yaml(&models_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
@@ -1065,7 +1098,13 @@ mod tests {
         )
         .unwrap();
 
-        let (st, _) = detect_status(Some(&out.binding), Some(&site), Some("sk-other"), override_of(&home)).unwrap();
+        let (st, _) = detect_status(
+            Some(&out.binding),
+            Some(&site),
+            Some("sk-other"),
+            override_of(&home),
+        )
+        .unwrap();
         assert_eq!(st, ApplyStatus::Stale);
 
         // Drift baseUrl behind the app's back.
@@ -1079,7 +1118,13 @@ mod tests {
             }
         }
         write_yaml(&mp, &root, false).unwrap();
-        let (st, reason) = detect_status(Some(&out.binding), Some(&site), Some("sk-key"), override_of(&home)).unwrap();
+        let (st, reason) = detect_status(
+            Some(&out.binding),
+            Some(&site),
+            Some("sk-key"),
+            override_of(&home),
+        )
+        .unwrap();
         assert_eq!(st, ApplyStatus::Stale);
         assert_eq!(reason.as_deref(), Some("base_url mismatch"));
 
@@ -1087,10 +1132,7 @@ mod tests {
         if let Some(Yaml::Mapping(provs)) = root.get_mut(&s("providers")) {
             for (_, v) in provs.iter_mut() {
                 if let Yaml::Mapping(p) = v {
-                    p.insert(
-                        s("baseUrl"),
-                        s("https://relay.example.com/v1"),
-                    );
+                    p.insert(s("baseUrl"), s("https://relay.example.com/v1"));
                 }
             }
         }
@@ -1101,7 +1143,13 @@ mod tests {
             roles.remove(&s("default"));
         }
         write_yaml(&cp, &cfg, false).unwrap();
-        let (st, reason) = detect_status(Some(&out.binding), Some(&site), Some("sk-key"), override_of(&home)).unwrap();
+        let (st, reason) = detect_status(
+            Some(&out.binding),
+            Some(&site),
+            Some("sk-key"),
+            override_of(&home),
+        )
+        .unwrap();
         assert_eq!(st, ApplyStatus::Stale);
         assert_eq!(reason.as_deref(), Some("default model changed"));
     }
@@ -1139,7 +1187,13 @@ mod tests {
         let cfg = read_yaml(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
         assert!(get_mapping(&cfg, "modelRoles").unwrap().is_empty());
 
-        let (st, _) = detect_status(Some(&out.binding), Some(&site), Some("sk"), override_of(&home)).unwrap();
+        let (st, _) = detect_status(
+            Some(&out.binding),
+            Some(&site),
+            Some("sk"),
+            override_of(&home),
+        )
+        .unwrap();
         assert_eq!(st, ApplyStatus::Stale);
     }
 
@@ -1161,7 +1215,8 @@ mod tests {
         let (st, reason) = detect_status(
             Some(&{
                 let mut b = out.binding.clone();
-                b.expected_fields.insert("base_url".into(), "https://moved.example.com/v1".into());
+                b.expected_fields
+                    .insert("base_url".into(), "https://moved.example.com/v1".into());
                 b
             }),
             Some(&site),
@@ -1176,11 +1231,20 @@ mod tests {
     fn restore_official_clears_untracked_providers() {
         let (_d, home) = temp_home("h9");
         let site = sample_site(SiteProtocol::OpenaiCompatible);
-        apply(&site, "sk", "m", &OmpApplyOptions::default(), override_of(&home), &home.join("bk"))
-            .unwrap();
+        apply(
+            &site,
+            "sk",
+            "m",
+            &OmpApplyOptions::default(),
+            override_of(&home),
+            &home.join("bk"),
+        )
+        .unwrap();
         restore_official(override_of(&home), &home.join("bk2")).unwrap();
         let models = read_yaml(&models_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
-        let empty = get_mapping(&models, "providers").map(|p| p.is_empty()).unwrap_or(true);
+        let empty = get_mapping(&models, "providers")
+            .map(|p| p.is_empty())
+            .unwrap_or(true);
         assert!(empty);
         let (st, _) = detect_status(None, None, None, override_of(&home)).unwrap();
         assert_eq!(st, ApplyStatus::NotApplied);
@@ -1276,18 +1340,16 @@ mod live_e2e_tests {
         let pid = out.binding.provider_id.clone().unwrap();
 
         // detect applied
-        let (st, reason) = detect_status(
-            Some(&out.binding),
-            Some(&site),
-            Some("sk-e2e-secret"),
-            None,
-        )
-        .unwrap();
+        let (st, reason) =
+            detect_status(Some(&out.binding), Some(&site), Some("sk-e2e-secret"), None).unwrap();
         assert_eq!(st, ApplyStatus::Applied, "{reason:?}");
 
         // live summary reflects the write
         let sum = live_summary(None).unwrap();
-        assert_eq!(sum.get("provider").and_then(|v| v.as_deref()), Some(pid.as_str()));
+        assert_eq!(
+            sum.get("provider").and_then(|v| v.as_deref()),
+            Some(pid.as_str())
+        );
 
         // rewrite base url
         let mut moved = site.clone();

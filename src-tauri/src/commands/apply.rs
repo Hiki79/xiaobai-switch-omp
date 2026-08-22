@@ -5,8 +5,8 @@ use crate::capabilities::{
 use crate::domain::{
     ApplyRecordDto, ApplyResult, ApplyStatus, ApplyTargetResult, BackupInfo, BackupPreview,
     CapabilitySource, CatalogModel, ClaudeApplyOptions, ClaudeAuthKeyStyle, ClaudeEffortLevel,
-    CodexApplyOptions, CodexReasoningEffort, OmpApplyOptions, SiteRow, TargetBinding, TargetKind,
-    TouchedKeys, ZcodeApplyOptions,
+    CodexApplyOptions, CodexReasoningEffort, DshApplyOptions, OmpApplyOptions, SiteRow,
+    TargetBinding, TargetKind, TouchedKeys, ZcodeApplyOptions,
 };
 use crate::error::{AppError, AppResult};
 use crate::lock::try_lock_target;
@@ -144,6 +144,9 @@ pub fn apply_site(
     zcode_reasoning_level: Option<String>,
     // Manual context-window override written into ZCode model limits.
     zcode_context_window: Option<u64>,
+    dsh_write_all_models: Option<bool>,
+    dsh_reasoning_levels: Option<Vec<String>>,
+    dsh_reasoning_level: Option<String>,
     // Checked site model ids for write-all targets; None means every model.
     catalog_model_ids: Option<Vec<String>>,
 ) -> AppResult<ApplyResult> {
@@ -195,11 +198,15 @@ pub fn apply_site(
     let write_all = codex_write_all_models.unwrap_or(false);
     let omp_write_all = omp_write_all_models.unwrap_or(false);
     let zcode_write_all = zcode_write_all_models.unwrap_or(false);
+    let dsh_write_all = dsh_write_all_models.unwrap_or(false);
     let need_catalog = (write_all && targets.contains(&TargetKind::Codex))
         || (omp_write_all && targets.contains(&TargetKind::Omp))
-        || (zcode_write_all && targets.contains(&TargetKind::Zcode));
+        || (zcode_write_all && targets.contains(&TargetKind::Zcode))
+        || (dsh_write_all && targets.contains(&TargetKind::Dsh));
     let catalog_models = if need_catalog {
-        let models = state.db.with_conn(|c| repo::site::list_models(c, &site_id))?;
+        let models = state
+            .db
+            .with_conn(|c| repo::site::list_models(c, &site_id))?;
         let selected = match catalog_model_ids {
             // The picker narrowed the catalog: keep DB order, drop unchecked
             // ids (and unknown ones) so the target only gets what the user
@@ -223,9 +230,10 @@ pub fn apply_site(
         selected
             .into_iter()
             .map(|m| {
-                let (context, output) = crate::model_meta::resolve_limits(&m.model_id, m.raw.as_ref())
-                    .map(|(c, o)| (Some(c), o))
-                    .unwrap_or((None, None));
+                let (context, output) =
+                    crate::model_meta::resolve_limits(&m.model_id, m.raw.as_ref())
+                        .map(|(c, o)| (Some(c), o))
+                        .unwrap_or((None, None));
                 CatalogModel {
                     model_id: m.model_id,
                     display_name: m.display_name,
@@ -263,6 +271,13 @@ pub fn apply_site(
         context_override: zcode_context_window.filter(|&v| v > 0),
         reasoning_levels: zcode_reasoning_levels.unwrap_or_default(),
         reasoning_level: non_empty(zcode_reasoning_level),
+    };
+
+    let dsh_opts = DshApplyOptions {
+        write_all_models: dsh_write_all,
+        catalog_models: catalog_models.clone(),
+        reasoning_levels: dsh_reasoning_levels.unwrap_or_default(),
+        reasoning_level: non_empty(dsh_reasoning_level),
     };
 
     let codex_opts = CodexApplyOptions {
@@ -304,12 +319,9 @@ pub fn apply_site(
                     &backup_root,
                 ) {
                     Ok(o) => {
-                        let inject_msg = crate::env_inject::inject_codex_env(
-                            &settings,
-                            &o.env_key,
-                            &api_key,
-                        )
-                        .unwrap_or_else(|e| e.to_string());
+                        let inject_msg =
+                            crate::env_inject::inject_codex_env(&settings, &o.env_key, &api_key)
+                                .unwrap_or_else(|e| e.to_string());
                         record_success(
                             &state,
                             target,
@@ -445,6 +457,41 @@ pub fn apply_site(
                     )),
                 }
             }
+            TargetKind::Dsh => {
+                match crate::adapters::dsh::apply(
+                    &site,
+                    &api_key,
+                    &model_id,
+                    &dsh_opts,
+                    settings.dsh_home_override.as_deref(),
+                    &backup_root,
+                ) {
+                    Ok(o) => record_success(
+                        &state,
+                        target,
+                        &site,
+                        &model_id,
+                        applied_at,
+                        &backup_root,
+                        &o.binding,
+                        &o.touched,
+                        o.backup_paths,
+                        o.live_summary,
+                        o.message,
+                        o.binding.provider_id.as_deref(),
+                        o.touched.env_keys.clone(),
+                    ),
+                    Err(e) => Ok(record_failure(
+                        &state,
+                        target,
+                        &site,
+                        &model_id,
+                        applied_at,
+                        &backup_root,
+                        &e,
+                    )),
+                }
+            }
         };
 
         results.push(outcome?);
@@ -545,16 +592,16 @@ pub fn revert_target(
             }
         }
         TargetKind::Omp => {
-            crate::adapters::omp::surgical_revert(
-                &binding,
-                settings.omp_home_override.as_deref(),
-            )?;
+            crate::adapters::omp::surgical_revert(&binding, settings.omp_home_override.as_deref())?;
         }
         TargetKind::Zcode => {
             crate::adapters::zcode::surgical_revert(
                 &binding,
                 settings.zcode_home_override.as_deref(),
             )?;
+        }
+        TargetKind::Dsh => {
+            crate::adapters::dsh::surgical_revert(&binding, settings.dsh_home_override.as_deref())?;
         }
     }
     state
@@ -610,6 +657,11 @@ pub fn restore_official_target(
         .map(|_| ()),
         TargetKind::Zcode => crate::adapters::zcode::restore_official(
             settings.zcode_home_override.as_deref(),
+            &backup_root,
+        )
+        .map(|_| ()),
+        TargetKind::Dsh => crate::adapters::dsh::restore_official(
+            settings.dsh_home_override.as_deref(),
             &backup_root,
         )
         .map(|_| ()),
@@ -671,7 +723,13 @@ pub fn list_backups(
     let targets: Vec<TargetKind> = if let Some(t) = target.as_deref().and_then(TargetKind::parse) {
         vec![t]
     } else {
-        vec![TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp, TargetKind::Zcode]
+        vec![
+            TargetKind::ClaudeCode,
+            TargetKind::Codex,
+            TargetKind::Omp,
+            TargetKind::Zcode,
+            TargetKind::Dsh,
+        ]
     };
     backup::list_backups_in(&root, &targets, |dir| {
         state

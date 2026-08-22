@@ -1,7 +1,9 @@
-use crate::capabilities::{capability_on, CODEX_COMPACT, CODEX_IMAGEGEN, CODEX_SEARCH, CODEX_VISION};
+use crate::capabilities::{
+    capability_on, CODEX_COMPACT, CODEX_IMAGEGEN, CODEX_SEARCH, CODEX_VISION,
+};
 use crate::domain::{
-    ApplyTargetResult, CapabilitySource, ClaudeAuthKeyStyle, ClaudeEffortLevel, CodexReasoningEffort,
-    SiteRow, TargetKind, TargetLiveStatus,
+    ApplyTargetResult, CapabilitySource, ClaudeAuthKeyStyle, ClaudeEffortLevel,
+    CodexReasoningEffort, SiteRow, TargetKind, TargetLiveStatus,
 };
 use crate::error::{AppError, AppResult};
 use crate::repo;
@@ -133,8 +135,7 @@ pub fn hydrate_codex(site: &SiteRow, status: Option<&TargetLiveStatus>) -> Codex
     };
 
     let capability_source = CapabilitySource::parse(
-        live
-            .and_then(|s| live_str(s, &["capability_source"]))
+        live.and_then(|s| live_str(s, &["capability_source"]))
             .as_deref(),
     );
 
@@ -154,9 +155,13 @@ pub fn hydrate_codex(site: &SiteRow, status: Option<&TargetLiveStatus>) -> Codex
                         .and_then(|s| live_str(s, &["provider_display_name"]))
                         .is_some_and(|v| v == "OpenAI"),
                 live.and_then(|s| live_str(s, &["tools_view_image", "view_image"]))
-                    .is_some_and(|v| v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on")),
+                    .is_some_and(|v| {
+                        v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on")
+                    }),
                 live.and_then(|s| live_str(s, &["features_image_generation", "image_generation"]))
-                    .is_some_and(|v| v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on")),
+                    .is_some_and(|v| {
+                        v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on")
+                    }),
                 web_search,
             )
         };
@@ -215,12 +220,65 @@ pub struct ZcodeHydration {
     pub model_ids: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DshHydration {
+    pub model_id: Option<String>,
+    pub write_all_models: bool,
+    pub reasoning_levels: Vec<String>,
+    pub reasoning_level: Option<String>,
+    pub model_ids: Option<Vec<String>>,
+}
+
+pub fn hydrate_dsh(site: &SiteRow, status: Option<&TargetLiveStatus>) -> DshHydration {
+    let live = status.map(|value| &value.live_summary);
+    let on_site = applied_on_site(&site.id, status);
+    let live_model = live
+        .and_then(|summary| live_str(summary, &["model"]))
+        .or_else(|| status.and_then(|value| value.applied_model_id.clone()));
+    let write_all = live
+        .and_then(|summary| live_str(summary, &["models"]))
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|count| count > 1);
+    let reasoning_levels = live
+        .and_then(|summary| live_str(summary, &["reasoning_efforts"]))
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|level| !level.is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default();
+    DshHydration {
+        model_id: if on_site {
+            live_model.or_else(|| site.selected_model_id.clone())
+        } else {
+            site.selected_model_id.clone()
+        },
+        write_all_models: on_site && write_all,
+        reasoning_levels,
+        reasoning_level: on_site
+            .then(|| live.and_then(|summary| live_str(summary, &["reasoning_effort"])))
+            .flatten(),
+        model_ids: if on_site && write_all {
+            live_model_ids(live)
+        } else {
+            None
+        },
+    }
+}
+
 pub fn hydrate_zcode(site: &SiteRow, status: Option<&TargetLiveStatus>) -> ZcodeHydration {
     let live = status.map(|s| &s.live_summary);
     let on_site = applied_on_site(&site.id, status);
     let live_model = live
         .and_then(|s| live_str(s, &["model"]))
-        .and_then(|m| m.split_once('/').map(|(_, model)| model.to_string()).or(Some(m)))
+        .and_then(|m| {
+            m.split_once('/')
+                .map(|(_, model)| model.to_string())
+                .or(Some(m))
+        })
         .or_else(|| status.and_then(|s| s.applied_model_id.clone()));
     let levels = if on_site {
         live.and_then(|s| live_str(s, &["reasoning_variants"]))
@@ -256,7 +314,11 @@ pub fn hydrate_zcode(site: &SiteRow, status: Option<&TargetLiveStatus>) -> Zcode
             .and_then(|s| live_str(s, &["model_context"]))
             .and_then(|v| v.trim().parse::<u64>().ok())
             .filter(|&v| v > 0),
-        model_ids: if write_all { live_model_ids(live) } else { None },
+        model_ids: if write_all {
+            live_model_ids(live)
+        } else {
+            None
+        },
     }
 }
 
@@ -265,8 +327,14 @@ pub fn pick_tray_targets(
     has_codex_binding: bool,
     has_omp_binding: bool,
     has_zcode_binding: bool,
+    has_dsh_binding: bool,
 ) -> Vec<TargetKind> {
-    if !has_claude_binding && !has_codex_binding && !has_omp_binding && !has_zcode_binding {
+    if !has_claude_binding
+        && !has_codex_binding
+        && !has_omp_binding
+        && !has_zcode_binding
+        && !has_dsh_binding
+    {
         return vec![TargetKind::ClaudeCode, TargetKind::Codex];
     }
     let mut out = Vec::new();
@@ -281,6 +349,9 @@ pub fn pick_tray_targets(
     }
     if has_zcode_binding {
         out.push(TargetKind::Zcode);
+    }
+    if has_dsh_binding {
+        out.push(TargetKind::Dsh);
     }
     out
 }
@@ -315,7 +386,11 @@ pub fn hydrate_omp(site: &SiteRow, status: Option<&TargetLiveStatus>) -> OmpHydr
     // default_model is a "<provider>/<model>[:level]" selector; keep the id part.
     let live_model = live
         .and_then(|s| live_str(s, &["default_model"]))
-        .map(|sel| sel.split_once('/').map(|(_, m)| m.to_string()).unwrap_or(sel))
+        .map(|sel| {
+            sel.split_once('/')
+                .map(|(_, m)| m.to_string())
+                .unwrap_or(sel)
+        })
         .map(|tail| {
             tail.rsplit_once(':')
                 .map(|(m, _)| m.to_string())
@@ -328,7 +403,13 @@ pub fn hydrate_omp(site: &SiteRow, status: Option<&TargetLiveStatus>) -> OmpHydr
         .is_some_and(|n| n > 1);
     let reasoning_levels = live
         .and_then(|s| live_str(s, &["reasoning_levels"]))
-        .map(|v| v.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect())
+        .map(|v| {
+            v.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect()
+        })
         .unwrap_or_default();
     let reasoning_level = live
         .and_then(|s| live_str(s, &["reasoning_level"]))
@@ -344,7 +425,11 @@ pub fn hydrate_omp(site: &SiteRow, status: Option<&TargetLiveStatus>) -> OmpHydr
         write_all_models: on_site && write_all,
         reasoning_levels,
         reasoning_level,
-        model_ids: if on_site && write_all { live_model_ids(live) } else { None },
+        model_ids: if on_site && write_all {
+            live_model_ids(live)
+        } else {
+            None
+        },
     }
 }
 
@@ -359,7 +444,8 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
     let has_codex = bindings.iter().any(|b| b.target == TargetKind::Codex);
     let has_omp = bindings.iter().any(|b| b.target == TargetKind::Omp);
     let has_zcode = bindings.iter().any(|b| b.target == TargetKind::Zcode);
-    let targets = pick_tray_targets(has_claude, has_codex, has_omp, has_zcode);
+    let has_dsh = bindings.iter().any(|b| b.target == TargetKind::Dsh);
+    let targets = pick_tray_targets(has_claude, has_codex, has_omp, has_zcode, has_dsh);
 
     let mut results = Vec::new();
     let mut attempted = false;
@@ -383,6 +469,9 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     h.sonnet_model,
                     h.haiku_model,
                     h.effort.map(|e| e.as_str().into()),
+                    None,
+                    None,
+                    None,
                     None,
                     None,
                     None,
@@ -434,6 +523,9 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     None,
                     None,
+                    None,
+                    None,
+                    None,
                     h.model_ids.clone(),
                 )?;
                 results.extend(applied.results);
@@ -466,6 +558,9 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     Some(h.write_all_models),
                     Some(h.reasoning_levels),
                     h.reasoning_level,
+                    None,
+                    None,
+                    None,
                     None,
                     None,
                     None,
@@ -506,7 +601,50 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     Some(h.reasoning_levels),
                     h.reasoning_level,
                     h.context_window,
+                    None,
+                    None,
+                    None,
                     h.model_ids.clone(),
+                )?;
+                results.extend(applied.results);
+            }
+            TargetKind::Dsh => {
+                let hydration = hydrate_dsh(&site, status);
+                let Some(model_id) = hydration.model_id.filter(|value| !value.trim().is_empty())
+                else {
+                    continue;
+                };
+                attempted = true;
+                let applied = crate::commands::apply::apply_site(
+                    app.clone(),
+                    app.state::<AppState>(),
+                    site.id.clone(),
+                    vec![TargetKind::Dsh],
+                    model_id,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(hydration.write_all_models),
+                    Some(hydration.reasoning_levels),
+                    hydration.reasoning_level,
+                    hydration.model_ids,
                 )?;
                 results.extend(applied.results);
             }
@@ -751,10 +889,8 @@ mod tests {
             Some("gpt-4.1"),
             ClaudeAuthKeyStyle::AnthropicAuthToken,
         );
-        row.capabilities
-            .insert(CODEX_COMPACT.into(), true);
-        row.capabilities
-            .insert(CODEX_VISION.into(), true);
+        row.capabilities.insert(CODEX_COMPACT.into(), true);
+        row.capabilities.insert(CODEX_VISION.into(), true);
         let defaults = hydrate_codex(&row, Some(&status));
         assert_eq!(defaults.capability_source, CapabilitySource::Site);
         assert!(defaults.remote_compaction);
@@ -766,18 +902,30 @@ mod tests {
     #[test]
     fn pick_targets_defaults_to_both_when_unbound() {
         assert_eq!(
-            pick_tray_targets(false, false, false, false),
+            pick_tray_targets(false, false, false, false, false),
             vec![TargetKind::ClaudeCode, TargetKind::Codex]
         );
-        assert_eq!(pick_tray_targets(true, false, false, false), vec![TargetKind::ClaudeCode]);
-        assert_eq!(pick_tray_targets(false, true, false, false), vec![TargetKind::Codex]);
         assert_eq!(
-            pick_tray_targets(false, false, true, false),
+            pick_tray_targets(true, false, false, false, false),
+            vec![TargetKind::ClaudeCode]
+        );
+        assert_eq!(
+            pick_tray_targets(false, true, false, false, false),
+            vec![TargetKind::Codex]
+        );
+        assert_eq!(
+            pick_tray_targets(false, false, true, false, false),
             vec![TargetKind::Omp]
         );
         assert_eq!(
-            pick_tray_targets(true, true, true, true),
-            vec![TargetKind::ClaudeCode, TargetKind::Codex, TargetKind::Omp, TargetKind::Zcode]
+            pick_tray_targets(true, true, true, true, true),
+            vec![
+                TargetKind::ClaudeCode,
+                TargetKind::Codex,
+                TargetKind::Omp,
+                TargetKind::Zcode,
+                TargetKind::Dsh
+            ]
         );
     }
 

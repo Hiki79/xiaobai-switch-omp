@@ -29,6 +29,8 @@ const CODEX_EFFORTS = new Set<CodexReasoningEffort>(CODEX_EFFORT_LIST);
 
 /** Effort ladder omp understands on `:level` suffixes and thinking.levels. */
 export const OMP_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+/** Effort identifiers accepted by dsh's pi-ai adapter. */
+export const DSH_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 const DEFAULT_FAMILY_LEVELS = ["low", "medium", "high", "max"];
 
@@ -213,6 +215,13 @@ export interface ZcodeFormDefaults {
   contextWindow: number | undefined;
 }
 
+export interface DshFormDefaults {
+  modelId: string | undefined;
+  writeAllModels: boolean;
+  reasoningLevels: string[];
+  reasoningLevel: string | undefined;
+}
+
 /** Model ids a target currently has written (`model_ids` live summary key). */
 export function parseLiveModelIds(live: LiveSummary | undefined): string[] {
   const raw = liveStr(live, "model_ids");
@@ -234,6 +243,19 @@ export function hydrateCatalogSelection(
     return models.filter((model) => written.has(model.modelId)).map((m) => m.modelId);
   }
   return models.map((m) => m.modelId);
+}
+
+export const STRICT_ZCODE_REASONING_LEVELS: Array<{ matches: RegExp; levels: string[] }> = [
+  {
+    matches: /ox[-_ ]?alpha/i,
+    levels: ["low", "high", "max"],
+  },
+];
+
+function strictReasoningLevelsForModel(modelId: string | undefined): string[] | undefined {
+  if (!modelId) return undefined;
+  const rule = STRICT_ZCODE_REASONING_LEVELS.find((entry) => entry.matches.test(modelId));
+  return rule ? [...rule.levels] : undefined;
 }
 
 /** Model-family reasoning ladders shared by every target; each target keeps
@@ -294,6 +316,9 @@ export function zcodeReasoningLevelsForModel(
   model?: SiteModel,
   status?: TargetLiveStatus,
 ): string[] {
+  const strictLevels = strictReasoningLevelsForModel(modelId);
+  if (strictLevels) return strictLevels;
+
   const liveModel = liveStr(status?.liveSummary, "model")?.split("/").pop();
   const byModelRaw = liveStr(status?.liveSummary, "reasoning_variants_by_model");
   if (modelId && byModelRaw) {
@@ -344,6 +369,15 @@ export function claudeEffortLevelsForModel(modelId: string | undefined): ClaudeE
 /** omp thinking.levels options for the selected model. */
 export function ompReasoningLevelsForModel(modelId: string | undefined): string[] {
   return intersectLevels(modelId, OMP_EFFORTS);
+}
+
+/** dsh/pi-ai reasoningEfforts options for the selected model. */
+export function dshReasoningLevelsForModel(modelId: string | undefined): string[] {
+  const strictLevels = strictReasoningLevelsForModel(modelId);
+  if (strictLevels) {
+    return strictLevels.filter((level) => (DSH_EFFORTS as readonly string[]).includes(level));
+  }
+  return intersectLevels(modelId, DSH_EFFORTS);
 }
 
 const PREFERRED_DEFAULT_LEVELS = ["max", "xhigh", "high", "medium", "low", "minimal", "off"];
@@ -435,6 +469,42 @@ export function hydrateOmpForm(
     reasoningLevel: defaultReasoningLevel(
       reasoningLevels,
       onSite ? liveStr(live, "reasoning_level") : undefined,
+    ),
+  };
+}
+
+export function hydrateDshForm(
+  site: Site | null,
+  status: TargetLiveStatus | undefined,
+): DshFormDefaults {
+  const live = status?.liveSummary;
+  const onSite = appliedOnSite(site, status);
+  const liveModel = liveStr(live, "model") ?? status?.appliedModelId ?? undefined;
+  const modelId = onSite
+    ? (liveModel ?? site?.selectedModelId ?? undefined)
+    : (site?.selectedModelId ?? undefined);
+  const liveLevels = (liveStr(live, "reasoning_efforts") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => (DSH_EFFORTS as readonly string[]).includes(value));
+  const safeLevels = dshReasoningLevelsForModel(modelId);
+  const strictLevels = strictReasoningLevelsForModel(modelId);
+  const reasoningLevels = strictLevels
+    ? safeLevels
+    : onSite && liveLevels.length > 0
+      ? liveLevels
+      : safeLevels;
+  const count = Number(liveStr(live, "models") ?? "1");
+  const writtenIds = parseLiveModelIds(live);
+  return {
+    modelId,
+    writeAllModels:
+      onSite &&
+      ((Number.isFinite(count) && count > 1) || writtenIds.length > 1),
+    reasoningLevels,
+    reasoningLevel: defaultReasoningLevel(
+      reasoningLevels,
+      onSite ? liveStr(live, "reasoning_effort") : undefined,
     ),
   };
 }
