@@ -2,22 +2,12 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const REQUIRED_PLATFORMS = [
-  "darwin-aarch64",
-  "darwin-aarch64-app",
-  "darwin-x86_64",
-  "darwin-x86_64-app",
   "windows-x86_64",
-  "windows-x86_64-msi",
   "windows-x86_64-nsis",
-  "windows-aarch64",
-  "windows-aarch64-nsis",
 ];
 
 const PRIMARY_BUNDLE = {
-  "darwin-aarch64": "app",
-  "darwin-x86_64": "app",
-  "windows-x86_64": "msi",
-  "windows-aarch64": "nsis",
+  "windows-x86_64": "nsis",
 };
 
 export const UPDATER_NOTES_END_MARKER = "<!-- updater-notes-end -->";
