@@ -7,9 +7,11 @@
 //! to a fixed application enum.
 
 use crate::adapters::atomic::{atomic_write, backup_file, restore_file};
+use crate::capabilities::{capability_on, CODEX_VISION};
 use crate::crypto::{key_fingerprint, key_prefix};
 use crate::domain::{
-    ApplyStatus, SiteProtocol, SiteRow, TargetBinding, TargetKind, TouchedKeys, ZcodeApplyOptions,
+    ApplyStatus, CatalogModel, SiteProtocol, SiteRow, TargetBinding, TargetKind, TouchedKeys,
+    ZcodeApplyOptions,
 };
 use crate::error::{AppError, AppResult};
 use crate::paths::resolve_zcode_home;
@@ -102,11 +104,76 @@ fn default_levels_for_model(model_id: &str) -> Vec<String> {
             .map(String::from)
             .collect()
     } else {
-        vec!["low", "medium", "high", "max"]
-            .into_iter()
-            .map(String::from)
-            .collect()
+        // GLM-style relays reject "medium" on many models; the safe common
+        // ladder for unknown families is low/high/max.
+        vec!["low", "high", "max"].into_iter().map(String::from).collect()
     }
+}
+
+/// Write `limit` / `modalities` metadata on a model entry. Resolved values
+/// (manual override → relay raw → family table) win; without any source the
+/// existing limit survives so ZCode's own default (or a user edit) stands.
+fn write_model_meta(
+    model_obj: &mut Map<String, Value>,
+    existing: Option<&Value>,
+    resolved_context: Option<u64>,
+    resolved_output: Option<u64>,
+    vision: bool,
+) {
+    let existing_limit = existing
+        .and_then(|v| v.get("limit"))
+        .and_then(Value::as_object);
+    let context = resolved_context.or_else(|| {
+        existing_limit
+            .and_then(|l| l.get("context"))
+            .and_then(Value::as_u64)
+    });
+    let output = resolved_output.or_else(|| {
+        existing_limit
+            .and_then(|l| l.get("output"))
+            .and_then(Value::as_u64)
+    });
+    if let Some(context) = context {
+        let mut limit = Map::new();
+        limit.insert("context".into(), json!(context));
+        if let Some(output) = output {
+            limit.insert("output".into(), json!(output));
+        }
+        model_obj.insert("limit".into(), Value::Object(limit));
+    }
+    let mut input = vec!["text"];
+    if vision {
+        input.push("image");
+    }
+    model_obj.insert(
+        "modalities".into(),
+        json!({ "input": input, "output": ["text"] }),
+    );
+}
+
+/// Metadata for the default model, preferring its catalog row (relay raw
+/// already resolved there) and falling back to the family table + site vision.
+fn default_model_meta(
+    options: &ZcodeApplyOptions,
+    site: &SiteRow,
+    model_id: &str,
+) -> (Option<u64>, Option<u64>, bool) {
+    let site_vision = capability_on(&site.capabilities, CODEX_VISION);
+    if let Some(entry) = options
+        .catalog_models
+        .iter()
+        .find(|m| m.model_id.trim() == model_id)
+    {
+        return (
+            options.context_override.or(entry.context),
+            entry.output,
+            site_vision || entry.vision,
+        );
+    }
+    let (context, output) = crate::model_meta::resolve_limits(model_id, None)
+        .map(|(c, o)| (Some(c), o))
+        .unwrap_or((None, None));
+    (options.context_override.or(context), output, site_vision)
 }
 
 fn normalize_levels(model_id: &str, requested: &[String], existing: Option<&Value>) -> Vec<String> {
@@ -224,6 +291,13 @@ fn live_for_provider(root: &Value, provider_id: &str) -> HashMap<String, Option<
         if let Some((pid, mid)) = model_ref.split_once('/') {
             if pid == provider_id {
                 if let Some(model) = model_value(provider, mid) {
+                    if let Some(context) = model
+                        .get("limit")
+                        .and_then(|l| l.get("context"))
+                        .and_then(Value::as_u64)
+                    {
+                        out.insert("model_context".into(), Some(context.to_string()));
+                    }
                     add_reasoning_summary(&mut out, model);
                 }
             }
@@ -354,7 +428,7 @@ pub fn apply(
     let catalog_ids: Vec<&str> = options
         .catalog_models
         .iter()
-        .map(|(id, _)| id.trim())
+        .map(|m| m.model_id.trim())
         .filter(|id| !id.is_empty())
         .collect();
     models.retain(|id, _| {
@@ -377,6 +451,14 @@ pub fn apply(
             "defaultVariant": level,
         }),
     );
+    let (meta_context, meta_output, meta_vision) = default_model_meta(options, site, model_id);
+    write_model_meta(
+        model_obj,
+        previous_model.as_ref(),
+        meta_context,
+        meta_output,
+        meta_vision,
+    );
     let zcode = model_obj
         .entry("zcode")
         .or_insert_with(|| Value::Object(Map::new()))
@@ -387,7 +469,14 @@ pub fn apply(
     // Extra catalog models: variants follow each model's family (or whatever
     // ZCode already has configured for it); the form's ladder only governs the
     // default model above.
-    for (extra_id, extra_name) in &options.catalog_models {
+    for entry in &options.catalog_models {
+        let CatalogModel {
+            model_id: extra_id,
+            display_name: extra_name,
+            context: extra_context,
+            output: extra_output,
+            vision: extra_vision,
+        } = entry;
         let extra_id = extra_id.trim();
         if extra_id.is_empty() || extra_id == model_id {
             continue;
@@ -416,6 +505,13 @@ pub fn apply(
                 "variants": extra_levels,
                 "defaultVariant": extra_level,
             }),
+        );
+        write_model_meta(
+            entry_obj,
+            previous.as_ref(),
+            options.context_override.or(*extra_context),
+            *extra_output,
+            *extra_vision,
         );
         let entry_zcode = entry_obj
             .entry("zcode")
@@ -794,9 +890,23 @@ mod tests {
         let opts = ZcodeApplyOptions {
             write_all_models: true,
             catalog_models: vec![
-                ("deepseek-chat".into(), "DeepSeek Chat".into()),
-                ("gpt-4.1".into(), String::new()),
+                CatalogModel {
+                    model_id: "deepseek-chat".into(),
+                    display_name: "DeepSeek Chat".into(),
+                    context: Some(131_072),
+                    output: Some(8_192),
+                    vision: false,
+                },
+                CatalogModel {
+                    model_id: "gpt-4.1".into(),
+                    display_name: String::new(),
+                    // As apply_site would resolve it via the family table.
+                    context: Some(1_000_000),
+                    output: Some(32_768),
+                    vision: true,
+                },
             ],
+            context_override: None,
             reasoning_levels: vec!["low".into(), "high".into()],
             reasoning_level: Some("high".into()),
         };
@@ -823,6 +933,17 @@ mod tests {
             deepseek.get("name").and_then(Value::as_str),
             Some("DeepSeek Chat")
         );
+        // Relay-resolved metadata lands as limit/modalities.
+        assert_eq!(deepseek.get("limit").unwrap()["context"], json!(131_072));
+        assert_eq!(deepseek.get("limit").unwrap()["output"], json!(8_192));
+        assert_eq!(deepseek.get("modalities").unwrap()["input"], json!(["text"]));
+        // Vision flag adds the image modality on top of the resolved limits.
+        let gpt = models.get("gpt-4.1").unwrap();
+        assert_eq!(gpt.get("limit").unwrap()["context"], json!(1_000_000));
+        assert_eq!(
+            gpt.get("modalities").unwrap()["input"],
+            json!(["text", "image"])
+        );
         let summary = live_for_provider(&root, "xiaobai-site-123");
         assert_eq!(summary.get("models"), Some(&Some("3".into())));
         assert_eq!(
@@ -845,6 +966,42 @@ mod tests {
             .get("models").unwrap().as_object().unwrap();
         assert_eq!(models.len(), 1);
         assert!(models.contains_key("glm-5.3"));
+    }
+
+    #[test]
+    fn apply_writes_model_meta_with_override_and_family_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("v2");
+        let opts = ZcodeApplyOptions {
+            context_override: Some(500_000),
+            ..Default::default()
+        };
+        apply(
+            &site(SiteProtocol::OpenaiCompatible),
+            "sk-secret",
+            "glm-5.3",
+            &opts,
+            Some(home.to_str().unwrap()),
+            &dir.path().join("backups"),
+        )
+        .unwrap();
+        let root = read_config(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
+        let model = provider_value(&root, "xiaobai-site-123").unwrap()
+            .get("models").unwrap().get("glm-5.3").unwrap();
+        // Manual override beats the family table (glm would be 1M/128K).
+        assert_eq!(model["limit"]["context"], json!(500_000));
+        assert_eq!(model["limit"]["output"], json!(128_000));
+        assert_eq!(model["modalities"]["input"], json!(["text"]));
+        let summary = live_for_provider(&root, "xiaobai-site-123");
+        assert_eq!(summary.get("model_context"), Some(&Some("500000".into())));
+    }
+
+    #[test]
+    fn unknown_models_fall_back_to_low_high_max_ladder() {
+        assert_eq!(
+            default_levels_for_model("ox-alpha-free"),
+            vec!["low", "high", "max"]
+        );
     }
 
     #[test]

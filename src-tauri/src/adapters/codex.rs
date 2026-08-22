@@ -1,8 +1,8 @@
 use crate::adapters::atomic::{atomic_write, backup_file, restore_file};
 use crate::crypto::{key_fingerprint, key_prefix};
 use crate::domain::{
-    env_key_for_site, provider_id_for_site, ApplyStatus, CodexApplyOptions, SiteRow, TargetBinding,
-    TargetKind, TouchedKeys,
+    env_key_for_site, provider_id_for_site, ApplyStatus, CatalogModel, CodexApplyOptions, SiteRow,
+    TargetBinding, TargetKind, TouchedKeys,
 };
 use crate::env_inject::codex_env_file::{
     list_defined_keys, read_env_file, remove_env_key, upsert_env_key, write_env_file,
@@ -210,7 +210,7 @@ fn supported_reasoning_levels(levels: &[String]) -> Vec<Value> {
 }
 
 fn build_model_catalog(
-    models: &[(String, String)],
+    models: &[CatalogModel],
     site_name: &str,
     image_understanding: bool,
     reasoning_levels: &[String],
@@ -225,16 +225,17 @@ fn build_model_catalog(
     let items: Vec<Value> = models
         .iter()
         .enumerate()
-        .map(|(i, (id, display))| {
+        .map(|(i, model)| {
+            let context = model.context.unwrap_or(128_000);
             json!({
-                "slug": id,
-                "display_name": display,
+                "slug": model.model_id,
+                "display_name": model.display_name,
                 "description": format!("From XiaoBaiSwitch · {site_name}"),
-                "context_window": 128000,
-                "max_context_window": 128000,
+                "context_window": context,
+                "max_context_window": context,
                 "visibility": "list",
                 "supported_in_api": true,
-                "input_modalities": modalities,
+                "input_modalities": if image_understanding || model.vision { json!(["text", "image"]) } else { modalities.clone() },
                 "priority": i + 1,
                 "default_reasoning_level": default_reasoning_level.unwrap_or("medium"),
                 // Fields below are required by Codex's ModelInfo schema; omitting
@@ -327,7 +328,11 @@ pub fn apply(
     // Optional model catalog for in-app model switching
     if options.write_all_models {
         let catalog_models = if options.catalog_models.is_empty() {
-            vec![(model_id.to_string(), model_id.to_string())]
+            vec![CatalogModel {
+                model_id: model_id.to_string(),
+                display_name: model_id.to_string(),
+                ..Default::default()
+            }]
         } else {
             options.catalog_models.clone()
         };
@@ -1265,9 +1270,9 @@ mod capability_write_tests {
 
     #[test]
     fn catalog_modalities_follow_understanding() {
-        let off = build_model_catalog(&[("m".into(), "M".into())], "S", false, &[], None);
+        let off = build_model_catalog(&[CatalogModel { model_id: "m".into(), display_name: "M".into(), ..Default::default() }], "S", false, &[], None);
         assert_eq!(off["models"][0]["input_modalities"], json!(["text"]));
-        let on = build_model_catalog(&[("m".into(), "M".into())], "S", true, &[], None);
+        let on = build_model_catalog(&[CatalogModel { model_id: "m".into(), display_name: "M".into(), ..Default::default() }], "S", true, &[], None);
         assert_eq!(off["models"][0]["input_modalities"], json!(["text"]));
         assert_eq!(
             on["models"][0]["input_modalities"],
@@ -1277,7 +1282,7 @@ mod capability_write_tests {
 
     #[test]
     fn catalog_reasoning_levels_follow_options() {
-        let stock = build_model_catalog(&[("m".into(), "M".into())], "S", false, &[], None);
+        let stock = build_model_catalog(&[CatalogModel { model_id: "m".into(), display_name: "M".into(), ..Default::default() }], "S", false, &[], None);
         let stock_efforts: Vec<&str> = stock["models"][0]["supported_reasoning_levels"]
             .as_array()
             .unwrap()
@@ -1288,7 +1293,7 @@ mod capability_write_tests {
         assert_eq!(stock["models"][0]["default_reasoning_level"], json!("medium"));
 
         let custom = build_model_catalog(
-            &[("m".into(), "M".into())],
+            &[CatalogModel { model_id: "m".into(), display_name: "M".into(), ..Default::default() }],
             "S",
             false,
             &["minimal".into(), "high".into(), "max".into()],
@@ -1377,7 +1382,7 @@ mod catalog_schema_tests {
 
     #[test]
     fn catalog_contains_codex_required_fields() {
-        let catalog = build_model_catalog(&[("m".into(), "M".into())], "S", false, &[], None);
+        let catalog = build_model_catalog(&[CatalogModel { model_id: "m".into(), display_name: "M".into(), ..Default::default() }], "S", false, &[], None);
         let model = &catalog["models"][0];
         assert_eq!(model["shell_type"], json!("unified_exec"));
         assert_eq!(model["support_verbosity"], json!(false));

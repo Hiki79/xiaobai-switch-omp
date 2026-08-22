@@ -209,6 +209,8 @@ pub struct ZcodeHydration {
     pub write_all_models: bool,
     pub reasoning_levels: Vec<String>,
     pub reasoning_level: Option<String>,
+    /// Manual context-window override from the last UI apply.
+    pub context_window: Option<u64>,
     /// Models the last UI apply narrowed the catalog to; None = every model.
     pub model_ids: Option<Vec<String>>,
 }
@@ -250,6 +252,10 @@ pub fn hydrate_zcode(site: &SiteRow, status: Option<&TargetLiveStatus>) -> Zcode
         } else {
             None
         },
+        context_window: live
+            .and_then(|s| live_str(s, &["model_context"]))
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .filter(|&v| v > 0),
         model_ids: if write_all { live_model_ids(live) } else { None },
     }
 }
@@ -392,6 +398,7 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     None,
                     None,
+                    None,
                 )?;
                 results.extend(applied.results);
             }
@@ -420,6 +427,7 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     Some(h.image_generation),
                     Some(h.web_search),
                     Some(h.capability_source.as_str().into()),
+                    None,
                     None,
                     None,
                     None,
@@ -461,6 +469,7 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     None,
                     None,
                     None,
+                    None,
                     h.model_ids.clone(),
                 )?;
                 results.extend(applied.results);
@@ -496,6 +505,7 @@ fn apply_site_from_tray_inner(app: &AppHandle, site_id: &str) -> AppResult<Vec<A
                     Some(h.write_all_models),
                     Some(h.reasoning_levels),
                     h.reasoning_level,
+                    h.context_window,
                     h.model_ids.clone(),
                 )?;
                 results.extend(applied.results);

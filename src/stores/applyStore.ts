@@ -109,6 +109,7 @@ export const useApplyStore = create<ApplyState>((set, get) => ({
         ompReasoningLevels: req.ompReasoningLevels ?? null,
         ompReasoningLevel: req.ompReasoningLevel ?? null,
         zcodeWriteAllModels: req.zcodeWriteAllModels ?? false,
+        zcodeContextWindow: req.zcodeContextWindow ?? null,
         zcodeReasoningLevels: req.zcodeReasoningLevels ?? null,
         zcodeReasoningLevel: req.zcodeReasoningLevel ?? null,
         catalogModelIds: req.catalogModelIds ?? null,

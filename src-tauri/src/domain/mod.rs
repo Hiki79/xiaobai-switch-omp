@@ -355,6 +355,17 @@ impl CapabilitySource {
     }
 }
 
+/// One site model handed to a target adapter, with the metadata the target
+/// configs can express (context/output limits and image input).
+#[derive(Debug, Clone, Default)]
+pub struct CatalogModel {
+    pub model_id: String,
+    pub display_name: String,
+    pub context: Option<u64>,
+    pub output: Option<u64>,
+    pub vision: bool,
+}
+
 /// Extra options for Claude Code apply.
 #[derive(Debug, Clone, Default)]
 pub struct ClaudeApplyOptions {
@@ -372,7 +383,7 @@ pub struct CodexApplyOptions {
     /// Effort ladder written into the model catalog's supported_reasoning_levels.
     pub reasoning_levels: Vec<String>,
     /// Site models used when `write_all_models` is true.
-    pub catalog_models: Vec<(String, String)>, // (model_id, display_name)
+    pub catalog_models: Vec<CatalogModel>,
     pub remote_compaction: bool,
     pub image_understanding: bool,
     pub image_generation: bool,
@@ -384,7 +395,7 @@ pub struct CodexApplyOptions {
 #[derive(Debug, Clone, Default)]
 pub struct OmpApplyOptions {
     pub write_all_models: bool,
-    pub catalog_models: Vec<(String, String)>,
+    pub catalog_models: Vec<CatalogModel>,
     /// Effort ladder exposed to omp via modelOverrides.<model>.thinking.levels.
     pub reasoning_levels: Vec<String>,
     /// Default level applied as the `:level` suffix on modelRoles.default.
@@ -399,7 +410,9 @@ pub struct ZcodeApplyOptions {
     pub write_all_models: bool,
     /// Site models written under the managed provider when `write_all_models`
     /// is true; extra models are pruned when it is false.
-    pub catalog_models: Vec<(String, String)>,
+    pub catalog_models: Vec<CatalogModel>,
+    /// Manual context-window override applied to every written model.
+    pub context_override: Option<u64>,
     pub reasoning_levels: Vec<String>,
     pub reasoning_level: Option<String>,
 }

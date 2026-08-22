@@ -4,9 +4,9 @@ use crate::capabilities::{
 };
 use crate::domain::{
     ApplyRecordDto, ApplyResult, ApplyStatus, ApplyTargetResult, BackupInfo, BackupPreview,
-    CapabilitySource, ClaudeApplyOptions, ClaudeAuthKeyStyle, ClaudeEffortLevel, CodexApplyOptions,
-    CodexReasoningEffort, OmpApplyOptions, SiteRow, TargetBinding, TargetKind, TouchedKeys,
-    ZcodeApplyOptions,
+    CapabilitySource, CatalogModel, ClaudeApplyOptions, ClaudeAuthKeyStyle, ClaudeEffortLevel,
+    CodexApplyOptions, CodexReasoningEffort, OmpApplyOptions, SiteRow, TargetBinding, TargetKind,
+    TouchedKeys, ZcodeApplyOptions,
 };
 use crate::error::{AppError, AppResult};
 use crate::lock::try_lock_target;
@@ -142,6 +142,8 @@ pub fn apply_site(
     zcode_write_all_models: Option<bool>,
     zcode_reasoning_levels: Option<Vec<String>>,
     zcode_reasoning_level: Option<String>,
+    // Manual context-window override written into ZCode model limits.
+    zcode_context_window: Option<u64>,
     // Checked site model ids for write-all targets; None means every model.
     catalog_model_ids: Option<Vec<String>>,
 ) -> AppResult<ApplyResult> {
@@ -197,14 +199,8 @@ pub fn apply_site(
         || (omp_write_all && targets.contains(&TargetKind::Omp))
         || (zcode_write_all && targets.contains(&TargetKind::Zcode));
     let catalog_models = if need_catalog {
-        let models = state.db.with_conn(|c| {
-            let models = repo::site::list_models(c, &site_id)?;
-            Ok(models
-                .into_iter()
-                .map(|m| (m.model_id, m.display_name))
-                .collect::<Vec<_>>())
-        })?;
-        match catalog_model_ids {
+        let models = state.db.with_conn(|c| repo::site::list_models(c, &site_id))?;
+        let selected = match catalog_model_ids {
             // The picker narrowed the catalog: keep DB order, drop unchecked
             // ids (and unknown ones) so the target only gets what the user
             // picked. The default model is re-added by each adapter.
@@ -216,11 +212,33 @@ pub fn apply_site(
                     .collect();
                 models
                     .into_iter()
-                    .filter(|(id, _)| wanted.contains(id))
+                    .filter(|m| wanted.contains(&m.model_id))
                     .collect::<Vec<_>>()
             }
             None => models,
-        }
+        };
+        // Site-level vision switch applies to every model, like the Codex
+        // catalog does; per-model relay metadata wins when it declares image.
+        let site_vision = capability_on(&site.capabilities, CODEX_VISION);
+        selected
+            .into_iter()
+            .map(|m| {
+                let (context, output) = crate::model_meta::resolve_limits(&m.model_id, m.raw.as_ref())
+                    .map(|(c, o)| (Some(c), o))
+                    .unwrap_or((None, None));
+                CatalogModel {
+                    model_id: m.model_id,
+                    display_name: m.display_name,
+                    context,
+                    output,
+                    vision: site_vision
+                        || m.raw
+                            .as_ref()
+                            .map(crate::model_meta::vision_from_raw)
+                            .unwrap_or(false),
+                }
+            })
+            .collect::<Vec<_>>()
     } else {
         vec![]
     };
@@ -242,6 +260,7 @@ pub fn apply_site(
     let zcode_opts = ZcodeApplyOptions {
         write_all_models: zcode_write_all,
         catalog_models: catalog_models.clone(),
+        context_override: zcode_context_window.filter(|&v| v > 0),
         reasoning_levels: zcode_reasoning_levels.unwrap_or_default(),
         reasoning_level: non_empty(zcode_reasoning_level),
     };

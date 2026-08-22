@@ -56,6 +56,7 @@
 - 当前目标：**Claude Code**、**Codex**、**omp**、**ZCode**；图标来自 `@lobehub/icons`
 - 每个目标有各自的专用表单（不是共享的双目标复选框面板）
 - 「模型列表」写入在 Codex / omp / ZCode 三目标统一用共享 `ModelCatalogSection`：开关 + 可搜索勾选列表（默认全选、默认模型始终写入且不可取消），勾选集经 `apply_site` 的 `catalog_model_ids` 过滤，重开面板时按 live summary 的 `model_ids` 回填；ZCode 关闭开关或缩小勾选集时按「默认模型 + 勾选集」裁剪 provider.models
+- 模型元数据：`models_fetch` 把 /v1/models 的完整对象存进 `raw_json`，`model_meta` 按「中转字段 → 模型家族表」解析上下文/输出上限与识图；ZCode 写成 `limit{context,output}` + `modalities`（image 跟随站点 `codex-vision`，手动覆盖走面板「上下文窗口」输入，回填 live `model_context`），Codex 目录的 `context_window` 同源；未知家族的思考等级兜底为 `low/high/max`（GLM 系中转拒绝 medium/off）
 - Claude 关键字段：鉴权 key 风格、默认模型、opus/sonnet/haiku 别名映射、effort 等级
 - Codex 关键字段：默认模型、写入全部模型目录开关、reasoning effort；平台能力默认跟随站点 `codex-compact` / `codex-vision` / `codex-imagegen` / `codex-search`，也可在应用中心自定义覆盖
 - 各目标都有「思考等级」，统一为共享 `ReasoningLevelFields` 的「默认思考等级 + 可用等级(tags)」两件套：等级列表按所选模型家族推导，并限定为目标 CLI 接受的取值（ZCode 为自由字符串可编辑，omp 写入 `modelOverrides.thinking.levels` 且默认等级走 `modelRoles` 的 `:level` 后缀，Codex 可用等级写入模型目录的 `supported_reasoning_levels`；Claude 保持单一 Effort 选择）

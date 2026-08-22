@@ -203,7 +203,7 @@ fn build_model_list(options: &OmpApplyOptions, model_id: &str) -> Vec<Yaml> {
     let catalog = options
         .catalog_models
         .iter()
-        .map(|(id, name)| (id.trim(), name.trim()))
+        .map(|m| (m.model_id.trim(), m.display_name.trim()))
         .filter(|(id, _)| !id.is_empty());
     for (id, name) in catalog {
         if seen.insert(id.to_string()) {
@@ -782,7 +782,7 @@ pub fn rewrite_base_url(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::ClaudeAuthKeyStyle;
+    use crate::domain::{CatalogModel, ClaudeAuthKeyStyle};
 
     fn sample_site(protocol: SiteProtocol) -> SiteRow {
         SiteRow {
@@ -998,9 +998,9 @@ mod tests {
             reasoning_levels: vec![],
             reasoning_level: None,
             catalog_models: vec![
-                ("m1".into(), "Model One".into()),
-                ("m2".into(), String::new()),
-                ("claude-sonnet-x".into(), "Selected".into()),
+                CatalogModel { model_id: "m1".into(), display_name: "Model One".into(), ..Default::default() },
+                CatalogModel { model_id: "m2".into(), display_name: String::new(), ..Default::default() },
+                CatalogModel { model_id: "claude-sonnet-x".into(), display_name: "Selected".into(), ..Default::default() },
             ],
         };
         apply(

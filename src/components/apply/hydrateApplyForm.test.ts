@@ -368,6 +368,7 @@ describe("hydrateZcodeForm", () => {
       }),
     );
     expect(multi.writeAllModels).toBe(true);
+    expect(multi.contextWindow).toBeUndefined();
 
     const single = hydrateZcodeForm(
       site({ id: "shuai", selectedModelId: "glm-5.3" }),
@@ -381,6 +382,25 @@ describe("hydrateZcodeForm", () => {
 
     const fresh = hydrateZcodeForm(site({ id: "shuai", selectedModelId: "glm-5.3" }), undefined);
     expect(fresh.writeAllModels).toBe(false);
+  });
+
+  it("hydrates the manual context window from the live summary", () => {
+    const defaults = hydrateZcodeForm(
+      site({ id: "shuai", selectedModelId: "glm-5.3" }),
+      status({
+        kind: "zcode",
+        appliedSiteId: "shuai",
+        liveSummary: {
+          model: "xiaobai-shuai/glm-5.3",
+          model_context: "500000",
+        },
+      }),
+    );
+    expect(defaults.contextWindow).toBe(500_000);
+  });
+
+  it("falls back to the low/high/max ladder for unknown families", () => {
+    expect(zcodeReasoningLevelsForModel("ox-alpha-free")).toEqual(["low", "high", "max"]);
   });
 });
 

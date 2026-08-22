@@ -3,29 +3,53 @@ use crate::error::{AppError, AppResult};
 use crate::url_normalize::normalize_base_url;
 use chrono::Utc;
 use serde::Deserialize;
+use serde_json::Value;
 use std::time::Instant;
 use uuid::Uuid;
 
+/// Both OpenAI- and Anthropic-style listings share the `{data: [...]}` shape;
+/// items are kept as raw JSON so relay-provided metadata (context window,
+/// modalities, …) survives into `site_models.raw_json`.
 #[derive(Debug, Deserialize)]
-struct OpenAiModelsResponse {
-    data: Option<Vec<OpenAiModel>>,
+struct ModelsListResponse {
+    data: Option<Vec<Value>>,
 }
 
-#[derive(Debug, Deserialize)]
-struct OpenAiModel {
-    id: String,
-    owned_by: Option<String>,
+fn dto_from_item(site_id: &str, item: Value) -> Option<SiteModelDto> {
+    if !item.is_object() {
+        return None;
+    }
+    let model_id = item.get("id").and_then(Value::as_str)?.trim().to_string();
+    if model_id.is_empty() {
+        return None;
+    }
+    let display_name = item
+        .get("display_name")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let owned_by = item
+        .get("owned_by")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        // Anthropic-style items carry display_name instead of owned_by.
+        .or_else(|| display_name.as_ref().map(|_| "anthropic".to_string()));
+    Some(SiteModelDto {
+        id: Uuid::new_v4().to_string(),
+        site_id: site_id.to_string(),
+        display_name: display_name.unwrap_or_else(|| model_id.clone()),
+        model_id,
+        owned_by,
+        raw: Some(item),
+        is_manual: false,
+    })
 }
 
-#[derive(Debug, Deserialize)]
-struct AnthropicModelsResponse {
-    data: Option<Vec<AnthropicModel>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AnthropicModel {
-    id: String,
-    display_name: Option<String>,
+fn dtos_from_body(site_id: &str, body: ModelsListResponse) -> Vec<SiteModelDto> {
+    body.data
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|item| dto_from_item(site_id, item))
+        .collect()
 }
 
 pub async fn fetch_models(
@@ -55,25 +79,11 @@ pub async fn fetch_models(
                     format!("HTTP {}", status.as_u16()),
                 ));
             }
-            let body: OpenAiModelsResponse = resp
+            let body: ModelsListResponse = resp
                 .json()
                 .await
                 .map_err(|e| AppError::new("invalid_response", e.to_string()))?;
-            let models = body
-                .data
-                .unwrap_or_default()
-                .into_iter()
-                .map(|m| SiteModelDto {
-                    id: Uuid::new_v4().to_string(),
-                    site_id: site.id.clone(),
-                    model_id: m.id.clone(),
-                    display_name: m.id,
-                    owned_by: m.owned_by,
-                    raw: None,
-                    is_manual: false,
-                })
-                .collect();
-            (endpoint, models)
+            (endpoint, dtos_from_body(&site.id, body))
         }
         SiteProtocol::Anthropic => {
             // Prefer Anthropic-style list; fall back to OpenAI-compatible path with x-api-key
@@ -100,43 +110,16 @@ pub async fn fetch_models(
                         ));
                     }
                     let text = resp.text().await?;
-                    if let Ok(body) = serde_json::from_str::<AnthropicModelsResponse>(&text) {
-                        let models = body
-                            .data
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|m| SiteModelDto {
-                                id: Uuid::new_v4().to_string(),
-                                site_id: site.id.clone(),
-                                model_id: m.id.clone(),
-                                display_name: m.display_name.unwrap_or(m.id),
-                                owned_by: Some("anthropic".into()),
-                                raw: None,
-                                is_manual: false,
-                            })
-                            .collect();
-                        (endpoint, models)
-                    } else if let Ok(body) = serde_json::from_str::<OpenAiModelsResponse>(&text) {
-                        let models = body
-                            .data
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|m| SiteModelDto {
-                                id: Uuid::new_v4().to_string(),
-                                site_id: site.id.clone(),
-                                model_id: m.id.clone(),
-                                display_name: m.id,
-                                owned_by: m.owned_by,
-                                raw: None,
-                                is_manual: false,
-                            })
-                            .collect();
-                        (endpoint, models)
-                    } else {
-                        return Err(AppError::new(
-                            "invalid_response",
-                            "Could not parse models response. Enter model id manually.",
-                        ));
+                    // One parser covers both shapes: OpenAI items expose
+                    // id/owned_by, Anthropic items id/display_name.
+                    match serde_json::from_str::<ModelsListResponse>(&text) {
+                        Ok(body) => (endpoint, dtos_from_body(&site.id, body)),
+                        Err(_) => {
+                            return Err(AppError::new(
+                                "invalid_response",
+                                "Could not parse models response. Enter model id manually.",
+                            ));
+                        }
                     }
                 }
                 Err(e) => return Err(e.into()),

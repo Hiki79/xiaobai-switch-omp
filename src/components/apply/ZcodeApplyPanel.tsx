@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, App, Select, Skeleton, Space } from "antd";
+import { Alert, App, InputNumber, Select, Skeleton, Space } from "antd";
 import { useTranslation } from "react-i18next";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { useApplyStore, useSiteStore } from "@/stores";
@@ -49,6 +49,7 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
 
   const [modelId, setModelId] = useState<string | undefined>();
   const [writeAllModels, setWriteAllModels] = useState(false);
+  const [contextWindow, setContextWindow] = useState<number | undefined>();
   const [reasoningLevels, setReasoningLevels] = useState<string[]>([]);
   const [reasoningLevel, setReasoningLevel] = useState<string | undefined>();
   const { catalogIds, setCatalogIds } = useCatalogSelection(models);
@@ -64,6 +65,7 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
       lastHydrate.current = null;
       setModelId(undefined);
       setWriteAllModels(false);
+      setContextWindow(undefined);
       setReasoningLevels([]);
       setReasoningLevel(undefined);
       setCatalogIds(null);
@@ -75,6 +77,7 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
     const defaults = hydrateZcodeForm(site, status, models);
     setModelId(defaults.modelId);
     setWriteAllModels(defaults.writeAllModels);
+    setContextWindow(defaults.contextWindow);
     setReasoningLevels(defaults.reasoningLevels);
     setReasoningLevel(defaults.reasoningLevel);
     const liveIds = defaults.writeAllModels ? parseLiveModelIds(status?.liveSummary) : [];
@@ -120,6 +123,7 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
         modelId,
         zcodeWriteAllModels: writeAllModels,
         catalogModelIds: writeAllModels ? catalogIds : null,
+        zcodeContextWindow: contextWindow ?? null,
         zcodeReasoningLevels: reasoningLevels,
         zcodeReasoningLevel: reasoningLevel ?? null,
       });
@@ -207,6 +211,21 @@ export const ZcodeApplyPanel = memo(function ZcodeApplyPanel() {
                 onSelectedIdsChange={setCatalogIds}
                 defaultModelId={modelId}
               />
+              <div className="mt-3" style={rowStyle}>
+                <div className="mb-1 text-sm opacity-70">{t("apply.zcodeContextWindow")}</div>
+                <InputNumber
+                  className="w-full"
+                  min={1000}
+                  step={1000}
+                  value={contextWindow}
+                  onChange={(value) =>
+                    setContextWindow(typeof value === "number" && value > 0 ? value : undefined)
+                  }
+                  placeholder={t("apply.zcodeContextWindowPlaceholder")}
+                  addonAfter="tokens"
+                />
+                <div className="mt-1 text-xs opacity-50">{t("apply.zcodeContextWindowHint")}</div>
+              </div>
             </SettingsGroup>
 
             <SettingsGroup title={t("apply.groupZcodeReasoning")}>

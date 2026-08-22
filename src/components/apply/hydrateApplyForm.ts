@@ -209,6 +209,8 @@ export interface ZcodeFormDefaults {
   writeAllModels: boolean;
   reasoningLevels: string[];
   reasoningLevel: string | undefined;
+  /** Manual context-window override written into ZCode model limits. */
+  contextWindow: number | undefined;
 }
 
 /** Model ids a target currently has written (`model_ids` live summary key). */
@@ -313,7 +315,8 @@ export function zcodeReasoningLevelsForModel(
   if (rawLevels.length > 0) return rawLevels;
 
   const family = ZCODE_MODEL_LEVELS.find((entry) => entry.matches.test(modelId ?? ""));
-  return family?.levels ?? ["low", "medium", "high", "max"];
+  // Keep in sync with the Rust fallback in zcode.rs::default_levels_for_model.
+  return family?.levels ?? ["low", "high", "max"];
 }
 
 function familyLevelsForModel(modelId: string | undefined): string[] {
@@ -395,6 +398,9 @@ export function hydrateZcodeForm(
       levels,
       onSite ? liveStr(live, "reasoning_default") : undefined,
     ),
+    contextWindow: onSite
+      ? Number(liveStr(live, "model_context") ?? "") || undefined
+      : undefined,
   };
 }
 

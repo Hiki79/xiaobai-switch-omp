@@ -469,6 +469,9 @@ export async function handleBrowserCommand<T>(
             model: modelId,
             models: String(written.length),
             model_ids: written.join(","),
+            ...(row.kind === "zcode" && typeof args?.zcodeContextWindow === "number"
+              ? { model_context: String(args.zcodeContextWindow) }
+              : {}),
           },
         };
       });

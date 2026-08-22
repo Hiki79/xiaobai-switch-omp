@@ -177,6 +177,8 @@ export interface ApplyRequest {
   ompReasoningLevel?: string | null;
   /** Write the site model list into the ZCode provider entry. */
   zcodeWriteAllModels?: boolean;
+  /** Manual context-window override written into ZCode model limits. */
+  zcodeContextWindow?: number | null;
   /** ZCode model-defined reasoning variants and the selected default variant. */
   zcodeReasoningLevels?: ZcodeReasoningLevel[] | null;
   zcodeReasoningLevel?: ZcodeReasoningLevel | null;

@@ -13,6 +13,7 @@ mod error;
 mod http_client;
 mod lock;
 mod macos_scheme;
+mod model_meta;
 mod model_probe;
 mod models_fetch;
 mod paths;
