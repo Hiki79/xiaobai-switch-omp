@@ -450,5 +450,25 @@
     "master_key_missing": "无法解密已存密钥：master.key 丢失，请从备份恢复或清空数据目录",
     "invalid_config": "目标配置文件无效",
     "internal": "内部错误"
+  },
+  "launch": {
+    "kind_not_installed": "未安装",
+    "kind_not_running": "未运行",
+    "kind_starting": "启动中",
+    "kind_running": "运行中",
+    "kind_launch_failed": "启动失败",
+    "launch": "启动",
+    "starting": "启动中",
+    "notDetected": "未检测到程序",
+    "openOrFocus": "打开/聚焦",
+    "openTerminalAgain": "再次打开终端",
+    "workingDirectory": "工作目录",
+    "workingDirectoryPlaceholder": "启动工作目录（默认用户主目录）",
+    "pickDirectory": "选择目录",
+    "applyFirstHint": "目标尚未应用配置，启动后将沿用旧配置，建议先在下方完成应用。",
+    "launchSuccess": "已发起启动",
+    "launchFailed": "启动失败",
+    "focusSuccess": "已尝试聚焦目标窗口",
+    "statusLabel": "运行状态"
   }
 }

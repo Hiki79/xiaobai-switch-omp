@@ -450,5 +450,25 @@
     "master_key_missing": "Cannot decrypt keys: master.key missing. Restore backup or clear data dir.",
     "invalid_config": "Invalid target config file",
     "internal": "Internal error"
+  },
+  "launch": {
+    "kind_not_installed": "Not installed",
+    "kind_not_running": "Not running",
+    "kind_starting": "Starting",
+    "kind_running": "Running",
+    "kind_launch_failed": "Launch failed",
+    "launch": "Launch",
+    "starting": "Starting",
+    "notDetected": "Program not detected",
+    "openOrFocus": "Open/Focus",
+    "openTerminalAgain": "Open terminal again",
+    "workingDirectory": "Working directory",
+    "workingDirectoryPlaceholder": "Launch working directory (defaults to home)",
+    "pickDirectory": "Choose directory",
+    "applyFirstHint": "This target has no applied config yet; launching would use stale settings — apply below first.",
+    "launchSuccess": "Launch requested",
+    "launchFailed": "Launch failed",
+    "focusSuccess": "Focused target window",
+    "statusLabel": "Run status"
   }
 }

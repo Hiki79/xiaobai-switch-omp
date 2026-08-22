@@ -14,6 +14,7 @@ pub const TRAY_ID: &str = "xiaobai-switch-tray";
 pub const TITLE_MAX_CHARS: usize = 40;
 pub const QUICK_SITE_LIMIT: usize = 6;
 const APPLY_PREFIX: &str = "apply:site:";
+pub const LAUNCH_PREFIX: &str = "launch:";
 
 pub struct TrayLabels {
     pub header: &'static str,
@@ -33,6 +34,7 @@ pub struct TrayLabels {
     pub orphan: &'static str,
     pub not_applied: &'static str,
     pub failed: &'static str,
+    pub launch: &'static str,
 }
 
 pub fn tray_labels(language: &str) -> TrayLabels {
@@ -56,6 +58,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             orphan: "Orphan",
             not_applied: "Not applied",
             failed: "Failed",
+            launch: "Launch",
         }
     } else {
         TrayLabels {
@@ -76,6 +79,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             orphan: "配置游离",
             not_applied: "未应用",
             failed: "失败",
+            launch: "启动",
         }
     }
 }
@@ -140,6 +144,17 @@ pub fn format_model_line(model_id: Option<&str>) -> Option<String> {
     Some(truncate_label(model, TITLE_MAX_CHARS))
 }
 
+/// Tray launch item label: `● 启动 Claude Code` when running, `○ 启动 Claude
+/// Code` otherwise — the marker doubles as the run-state indicator.
+pub fn format_launch_line(labels: &TrayLabels, running: bool, kind: TargetKind) -> String {
+    format!(
+        "{} {} {}",
+        if running { "●" } else { "○" },
+        labels.launch,
+        kind_label(labels, kind)
+    )
+}
+
 pub fn format_tooltip(
     labels: &TrayLabels,
     claude: &str,
@@ -200,6 +215,11 @@ pub struct TraySnapshot {
     pub dsh_model: Option<String>,
     pub tooltip: String,
     pub sites: Vec<QuickSite>,
+    pub claude_running: bool,
+    pub codex_running: bool,
+    pub omp_running: bool,
+    pub zcode_running: bool,
+    pub dsh_running: bool,
 }
 
 impl TraySnapshot {
@@ -254,6 +274,11 @@ impl TraySnapshot {
             dsh_model: None,
             tooltip: format_tooltip(&labels, &claude, &codex, &omp, &zcode, &dsh),
             sites: vec![],
+            claude_running: false,
+            codex_running: false,
+            omp_running: false,
+            zcode_running: false,
+            dsh_running: false,
         }
     }
 }
@@ -339,6 +364,43 @@ fn build_menu(
     }
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
+    append_plain_item(
+        app,
+        &menu,
+        "launch:claude_code",
+        &format_launch_line(&labels, snapshot.claude_running, TargetKind::ClaudeCode),
+        true,
+    )?;
+    append_plain_item(
+        app,
+        &menu,
+        "launch:codex",
+        &format_launch_line(&labels, snapshot.codex_running, TargetKind::Codex),
+        true,
+    )?;
+    append_plain_item(
+        app,
+        &menu,
+        "launch:omp",
+        &format_launch_line(&labels, snapshot.omp_running, TargetKind::Omp),
+        true,
+    )?;
+    append_plain_item(
+        app,
+        &menu,
+        "launch:zcode",
+        &format_launch_line(&labels, snapshot.zcode_running, TargetKind::Zcode),
+        true,
+    )?;
+    append_plain_item(
+        app,
+        &menu,
+        "launch:dsh",
+        &format_launch_line(&labels, snapshot.dsh_running, TargetKind::Dsh),
+        true,
+    )?;
+
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
     append_native_icon_item(
         app,
         &menu,
@@ -393,6 +455,11 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
     let labels = tray_labels(&language);
 
     let tools = crate::commands::targets::detect_cli_tools_cached(false);
+    let processes = crate::runtime::collect_processes();
+    let is_running = |kind: TargetKind| {
+        let exe = crate::runtime::resolve_target_executable(kind, &tools);
+        crate::runtime::detect_running_pid(exe.as_deref(), &processes).is_some()
+    };
     let statuses = crate::commands::targets::list_target_status_with_tools(&state, &tools)
         .unwrap_or_else(|err| {
             tracing::warn!("Failed to load target status for tray: {err}");
@@ -471,6 +538,11 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
         dsh_model: lines[4].2.clone(),
         tooltip,
         sites: pick_quick_sites(&rows, &applied, QUICK_SITE_LIMIT),
+        claude_running: is_running(TargetKind::ClaudeCode),
+        codex_running: is_running(TargetKind::Codex),
+        omp_running: is_running(TargetKind::Omp),
+        zcode_running: is_running(TargetKind::Zcode),
+        dsh_running: is_running(TargetKind::Dsh),
     }
 }
 
@@ -558,6 +630,15 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
                 crate::tray_apply::apply_site_from_tray(&app, &site_id);
             });
         }
+        other if other.starts_with(LAUNCH_PREFIX) => {
+            let raw = &other[LAUNCH_PREFIX.len()..];
+            if let Some(kind) = TargetKind::parse(raw) {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::commands::runtime::launch_target_from_tray(&app, kind).await;
+                });
+            }
+        }
         _ => {}
     }
 }
@@ -616,6 +697,7 @@ mod tests {
         assert_eq!(zh.applied, "已应用");
         assert_eq!(tray_labels("zh").quit, "退出 XiaoBaiSwitch");
         assert_eq!(tray_labels("fr-FR").open_settings, "打开设置");
+        assert_eq!(zh.launch, "启动");
     }
 
     #[test]
@@ -625,6 +707,19 @@ mod tests {
         assert_eq!(en.not_applied, "Not applied");
         assert_eq!(en.check_update, "Check for Updates");
         assert_eq!(tray_labels("en").open_apply, "Open Apply Center");
+        assert_eq!(en.launch, "Launch");
+    }
+
+    #[test]
+    fn launch_line_marks_running_state() {
+        let labels = tray_labels("zh-CN");
+        let running = format_launch_line(&labels, true, TargetKind::Codex);
+        let idle = format_launch_line(&labels, false, TargetKind::Codex);
+        assert!(running.starts_with("●"));
+        assert!(running.contains("启动"));
+        assert!(running.contains("Codex"));
+        assert!(!idle.starts_with("●"));
+        assert!(idle.starts_with("○"));
     }
 
     #[test]

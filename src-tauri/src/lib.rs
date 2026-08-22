@@ -22,6 +22,7 @@ mod reasoning_meta;
 mod redact;
 mod repo;
 mod route_switch;
+mod runtime;
 mod state;
 mod tray;
 mod tray_apply;
@@ -124,6 +125,10 @@ pub fn run() {
             commands::list_target_status,
             commands::detect_cli_tools,
             commands::cleanup_orphan_target,
+            commands::list_target_runtime_statuses,
+            commands::get_target_runtime_status,
+            commands::launch_target,
+            commands::focus_target,
             commands::apply_site,
             commands::revert_target,
             commands::restore_official_target,

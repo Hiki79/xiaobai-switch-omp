@@ -8,6 +8,7 @@ import { DshApplyPanel } from "@/components/apply/DshApplyPanel";
 import { OmpApplyPanel } from "@/components/apply/OmpApplyPanel";
 import { ZcodeApplyPanel } from "@/components/apply/ZcodeApplyPanel";
 import { useDeferredTabContent } from "@/hooks/useDeferredTabContent";
+import { useRuntimeStore } from "@/stores/runtimeStore";
 import { useApplyStore, useSiteStore, useUIStore } from "@/stores";
 
 /**
@@ -18,14 +19,26 @@ import { useApplyStore, useSiteStore, useUIStore } from "@/stores";
 export function ApplyPage() {
   const { token } = theme.useToken();
   const applyTab = useUIStore((s) => s.applyTab);
+  const activePage = useUIStore((s) => s.activePage);
   const loadSites = useSiteStore((s) => s.loadSites);
   const ensureApplyData = useApplyStore((s) => s.ensureApplyData);
+  const startPolling = useRuntimeStore((s) => s.startPolling);
+  const stopPolling = useRuntimeStore((s) => s.stopPolling);
   const { mounted, showSkeleton } = useDeferredTabContent(applyTab);
 
   useEffect(() => {
     void loadSites({ soft: true });
     void ensureApplyData();
   }, [loadSites, ensureApplyData]);
+
+  // Runtime status polling runs only while the apply center is the active
+  // page and stops when the user navigates away or the page unmounts.
+  // startPolling performs the initial load when nothing is cached yet.
+  useEffect(() => {
+    if (activePage !== "apply") return;
+    startPolling();
+    return () => stopPolling();
+  }, [activePage, startPolling, stopPolling]);
 
   return (
     <div className="flex h-full min-h-0">

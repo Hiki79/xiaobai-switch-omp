@@ -82,38 +82,43 @@ describe("ApplyPage target switch", () => {
     resetStores();
   });
 
-  it("shows a skeleton immediately when switching to an unvisited target", async () => {
-    await seedSite();
-    render(
-      <Wrapper>
-        <ApplyPage />
-      </Wrapper>,
-    );
+  it(
+    "shows a skeleton immediately when switching to an unvisited target",
+    async () => {
+      await seedSite();
+      render(
+        <Wrapper>
+          <ApplyPage />
+        </Wrapper>,
+      );
 
-    await waitFor(() => {
-      expect(screen.getByText("鉴权字段")).toBeInTheDocument();
-    });
+      await waitFor(() => {
+        expect(screen.getByText("鉴权字段")).toBeInTheDocument();
+      });
 
-    fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
 
-    expect(document.querySelector("[aria-busy='true']")).toBeTruthy();
-    expect(screen.queryByText("将站点全部模型写入 Codex")).not.toBeInTheDocument();
+      expect(document.querySelector("[aria-busy='true']")).toBeTruthy();
+      expect(screen.queryByText("将站点全部模型写入 Codex")).not.toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(screen.getByText("将站点全部模型写入 Codex")).toBeInTheDocument();
-    });
-    expect(screen.getByText("平台能力")).toBeInTheDocument();
-    expect(screen.getByText("跟随站点预设能力")).toBeInTheDocument();
-    expect(screen.queryByText("识图支持")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText("将站点全部模型写入 Codex")).toBeInTheDocument();
+      });
+      expect(screen.getByText("平台能力")).toBeInTheDocument();
+      expect(screen.getByText("跟随站点预设能力")).toBeInTheDocument();
+      expect(screen.queryByText("识图支持")).not.toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByText("跟随站点预设能力"));
-    const custom = await screen.findByText("自定义");
-    fireEvent.click(custom);
-    expect(screen.getByText("远程压缩")).toBeInTheDocument();
-    expect(screen.getByText("识图支持")).toBeInTheDocument();
-    expect(screen.getByText("生图支持")).toBeInTheDocument();
-    expect(screen.getByText("搜索")).toBeInTheDocument();
-  });
+      fireEvent.mouseDown(screen.getByText("跟随站点预设能力"));
+      const custom = await screen.findByText("自定义");
+      fireEvent.click(custom);
+      expect(screen.getByText("远程压缩")).toBeInTheDocument();
+      expect(screen.getByText("识图支持")).toBeInTheDocument();
+      expect(screen.getByText("生图支持")).toBeInTheDocument();
+      expect(screen.getByText("搜索")).toBeInTheDocument();
+    },
+    // Heavy panel mount; the full suite runs many workers in parallel.
+    15000,
+  );
 
   it("keeps a visited target mounted so switching back is instant", async () => {
     await seedSite();

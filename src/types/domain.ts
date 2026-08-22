@@ -237,6 +237,8 @@ export interface AppSettings {
   closeToTray: boolean;
   /** Keep the main window hidden on launch. Disabled when closeToTray is off. */
   startInTray: boolean;
+  /** Last chosen launch working directory per target (TUI targets only). */
+  launchWorkingDirectories: Partial<Record<TargetKind, string>>;
 }
 
 export interface SwitchRouteResult {
@@ -332,6 +334,22 @@ export interface CliToolInfo {
   installed: boolean;
   version: string | null;
   path: string | null;
+}
+
+/** Live launch/run state of a target, returned by the runtime status commands. */
+export interface TargetRuntimeStatus {
+  target: TargetKind;
+  installed: boolean;
+  running: boolean;
+  pid: number | null;
+  executablePath: string | null;
+  error: string | null;
+}
+
+/** Launch request from the apply center / tray. */
+export interface LaunchTargetRequest {
+  target: TargetKind;
+  workingDirectory?: string | null;
 }
 
 export interface AppPaths {

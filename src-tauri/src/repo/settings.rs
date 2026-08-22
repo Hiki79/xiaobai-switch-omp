@@ -95,6 +95,7 @@ mod tests {
         assert_eq!(s.language, "en-US");
         assert!(s.close_to_tray);
         assert!(!s.start_in_tray);
+        assert!(s.launch_working_directories.is_empty());
     }
 
     #[test]

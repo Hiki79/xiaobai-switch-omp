@@ -6,8 +6,10 @@ import { SiteAvatar } from "@/components/sites/SiteAvatar";
 import { isAppError } from "@/lib/invoke";
 import { TARGET_LABEL_KEY } from "@/lib/targetMeta";
 import { revealInExplorer } from "@/lib/revealInExplorer";
-import { useSiteStore } from "@/stores";
+import { useRuntimeStore } from "@/stores/runtimeStore";
+import { useSettingsStore, useSiteStore } from "@/stores";
 import type { ApplyStatus, CliToolInfo, TargetKind, TargetLiveStatus } from "@/types/domain";
+import { TargetLaunchControl } from "./TargetLaunchControl";
 
 const STATUS_COLOR: Record<string, string> = {
   applied: "success",
@@ -59,6 +61,16 @@ export function TargetStatusCard({
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const sites = useSiteStore((s) => s.sites);
+  const launchWorkingDirectories = useSettingsStore((s) => s.settings.launchWorkingDirectories);
+  const runtimeStatus = useRuntimeStore((s) => s.statuses[status?.kind ?? "claude_code"]);
+  const runtimeStarting = useRuntimeStore((s) => Boolean(s.starting[status?.kind ?? "claude_code"]));
+  const runtimeLaunchError = useRuntimeStore(
+    (s) => s.launchErrors[status?.kind ?? "claude_code"] ?? null,
+  );
+  const runtimeHydrated = useRuntimeStore((s) => s.hydrated);
+  const launchTarget = useRuntimeStore((s) => s.launchTarget);
+  const focusTarget = useRuntimeStore((s) => s.focusTarget);
+  const setWorkingDirectory = useRuntimeStore((s) => s.setWorkingDirectory);
   const [refreshing, setRefreshing] = useState(false);
   const [reverting, setReverting] = useState(false);
   const [cleaning, setCleaning] = useState(false);
@@ -81,6 +93,7 @@ export function TargetStatusCard({
   const siteName = appliedSite?.name ?? status.appliedSiteName;
   const modelId = status.appliedModelId;
   const canRevert = status.status !== "not_applied" && !status.orphan;
+  const launchDir = launchWorkingDirectories?.[status.kind];
 
   const summaryEntries = Object.entries(status.liveSummary).filter(
     ([, v]) => v != null && String(v).length > 0,
@@ -183,6 +196,23 @@ export function TargetStatusCard({
           </Button>
         </div>
       </div>
+
+      {runtimeHydrated && (
+        <div className="mb-4">
+          <TargetLaunchControl
+            target={status.kind}
+            runtimeStatus={runtimeStatus}
+            configured={status.status === "applied"}
+            workingDirectory={launchDir}
+            onWorkingDirectoryChange={(dir) => void setWorkingDirectory(status.kind, dir)}
+            onLaunch={() => launchTarget(status.kind, launchDir)}
+            onFocus={() => focusTarget(status.kind)}
+            starting={runtimeStarting}
+            launchError={runtimeLaunchError}
+            showName={false}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col" style={{ gap: 14 }}>
         <Fact label={t("apply.configPath")}>

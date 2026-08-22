@@ -25,6 +25,7 @@ const DEFAULT: AppSettings = {
   routeProbeTtlMinutes: 10,
   closeToTray: true,
   startInTray: false,
+  launchWorkingDirectories: {},
 };
 
 interface SettingsState {

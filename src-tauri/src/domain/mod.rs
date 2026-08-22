@@ -498,6 +498,11 @@ pub struct AppSettings {
     /// Keep the main window hidden on launch (only meaningful with close_to_tray).
     #[serde(default)]
     pub start_in_tray: bool,
+    /// Last chosen launch working directory per target (`claude_code`, `codex`,
+    /// `omp`, `dsh`; ZCode is a GUI and never stores one). Missing entries fall
+    /// back to the user home directory.
+    #[serde(default)]
+    pub launch_working_directories: HashMap<String, String>,
 }
 
 pub fn default_max_backup_copies() -> u32 {
@@ -575,6 +580,7 @@ impl Default for AppSettings {
             route_probe_ttl_minutes: default_route_probe_ttl(),
             close_to_tray: true,
             start_in_tray: false,
+            launch_working_directories: HashMap::new(),
         }
     }
 }
@@ -656,6 +662,26 @@ pub struct CliToolInfo {
     pub installed: bool,
     pub version: Option<String>,
     pub path: Option<String>,
+}
+
+/// Live launch/run state of a target, returned by the runtime status commands.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetRuntimeStatus {
+    pub target: TargetKind,
+    pub installed: bool,
+    pub running: bool,
+    pub pid: Option<u32>,
+    pub executable_path: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Launch request from the apply center / tray.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchTargetRequest {
+    pub target: TargetKind,
+    pub working_directory: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

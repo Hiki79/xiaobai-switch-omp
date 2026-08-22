@@ -10,6 +10,7 @@ import type {
   DeepLinkSiteImportResult,
   FetchModelsResult,
   HttpBytesResult,
+  LaunchTargetRequest,
   ModelProbeResult,
   Site,
   SiteQuota,
@@ -17,6 +18,7 @@ import type {
   SwitchRouteResult,
   TargetKind,
   TargetLiveStatus,
+  TargetRuntimeStatus,
   UpdateSiteInput,
   UrlProbeResult,
 } from "@/types/domain";
@@ -45,6 +47,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   routeProbeTtlMinutes: 10,
   closeToTray: true,
   startInTray: false,
+  launchWorkingDirectories: {},
 };
 
 function defaultTargetStatuses(): TargetLiveStatus[] {
@@ -127,10 +130,24 @@ function defaultTargetStatuses(): TargetLiveStatus[] {
   ];
 }
 
+function defaultRuntimeStatuses(): TargetRuntimeStatus[] {
+  const kinds: TargetKind[] = ["claude_code", "codex", "omp", "zcode", "dsh"];
+  return kinds.map((target) => ({
+    target,
+    installed: false,
+    running: false,
+    pid: null,
+    executablePath: null,
+    error: null,
+  }));
+}
+
 let settings: AppSettings = { ...DEFAULT_SETTINGS };
 let sites: Site[] = [];
 let backups: BackupInfo[] = [];
 let targetStatuses: TargetLiveStatus[] = defaultTargetStatuses();
+let runtimeStatuses: TargetRuntimeStatus[] = defaultRuntimeStatuses();
+let lastLaunchRequest: LaunchTargetRequest | null = null;
 const models = new Map<string, SiteModel[]>();
 const keys = new Map<string, string>();
 const exclusions = new Map<string, Set<string>>();
@@ -140,6 +157,8 @@ export function resetBrowserMock() {
   sites = [];
   backups = [];
   targetStatuses = defaultTargetStatuses();
+  runtimeStatuses = defaultRuntimeStatuses();
+  lastLaunchRequest = null;
   models.clear();
   keys.clear();
   exclusions.clear();
@@ -147,6 +166,17 @@ export function resetBrowserMock() {
 
 export function seedTargetStatuses(items: TargetLiveStatus[]) {
   targetStatuses = items;
+}
+
+export function seedRuntimeStatuses(items: TargetRuntimeStatus[]) {
+  runtimeStatuses = runtimeStatuses.map(
+    (row) => items.find((item) => item.target === row.target) ?? row,
+  );
+}
+
+/** Last `launch_target` request seen by the mock (for contract tests). */
+export function getLastLaunchRequest(): LaunchTargetRequest | null {
+  return lastLaunchRequest;
 }
 
 export function seedBackups(items: BackupInfo[]) {
@@ -529,6 +559,62 @@ export async function handleBrowserCommand<T>(
     }
     case "cleanup_orphan_target":
       return undefined as T;
+    case "list_target_runtime_statuses":
+      return runtimeStatuses as T;
+    case "get_target_runtime_status": {
+      const target = args?.target as TargetKind;
+      const status = runtimeStatuses.find((s) => s.target === target);
+      if (!status) throw { code: "not_found", message: "target not found" };
+      return status as T;
+    }
+    case "launch_target": {
+      const req = args?.req as LaunchTargetRequest;
+      if (!req?.target) {
+        throw { code: "validation_failed", message: "target is required" };
+      }
+      lastLaunchRequest = req;
+      const dir = req.workingDirectory?.trim();
+      if (dir && /[\\/]missing[\\/]/.test(dir)) {
+        throw { code: "working_dir_missing", message: "working directory does not exist" };
+      }
+      let updated: TargetRuntimeStatus | undefined;
+      runtimeStatuses = runtimeStatuses.map((row) => {
+        if (row.target !== req.target) return row;
+        if (!row.installed) {
+          throw { code: "not_installed", message: "target executable not found" };
+        }
+        // GUI targets never spawn a second instance while running.
+        if (row.running && req.target === "zcode") {
+          updated = row;
+          return row;
+        }
+        updated = {
+          ...row,
+          running: true,
+          pid: row.pid ?? 4242,
+          error: null,
+        };
+        return updated;
+      });
+      if (!updated) throw { code: "not_found", message: "target not found" };
+      if (dir) {
+        settings = {
+          ...settings,
+          launchWorkingDirectories: {
+            ...settings.launchWorkingDirectories,
+            [req.target]: dir,
+          },
+        };
+      }
+      return updated as T;
+    }
+    case "focus_target": {
+      const target = args?.target as TargetKind;
+      const status = runtimeStatuses.find((s) => s.target === target);
+      if (!status) throw { code: "not_found", message: "target not found" };
+      if (!status.running) throw { code: "not_running", message: "target is not running" };
+      return status as T;
+    }
     case "list_apply_records":
       return [] as T;
     case "list_backups": {
