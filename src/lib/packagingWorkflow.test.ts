@@ -86,7 +86,7 @@ describe("shipped GitHub workflows", () => {
     ).toBe(false);
   });
 
-  it("Release matrix covers macOS arm64/intel and Windows x64/arm64", () => {
+  it("Release matrix builds only Windows x64", () => {
     const release = readRepoFile(".github/workflows/release.yml");
     expect(release).toMatch(/^name:\s*Release\s*$/m);
     expect(release).toMatch(/tags:\s*\n\s+-\s+"v\*\.\*\.\*"/);
@@ -96,6 +96,8 @@ describe("shipped GitHub workflows", () => {
     for (const target of REQUIRED_RELEASE_TARGETS) {
       expect(targets).toContain(target);
     }
+    expect(targets).toEqual(["x86_64-pc-windows-msvc"]);
+    expect(release).toMatch(/--bundles nsis/);
   });
 
   it("enables signed updater artifacts in tauri.conf", () => {
@@ -117,13 +119,13 @@ describe("shipped GitHub workflows", () => {
     expect(tauri.bundle.macOS?.signingIdentity).toBe("-");
   });
 
-  it("signs updater artifacts and publishes a combined latest.json", () => {
+  it("signs Windows updater artifacts and publishes latest.json", () => {
     const release = readRepoFile(".github/workflows/release.yml");
     expect(release).toMatch(/TAURI_SIGNING_PRIVATE_KEY/);
     expect(release).toMatch(/includeUpdaterJson:\s*false/);
     expect(release).toMatch(/scripts\/generate-updater-manifest\.mjs/);
     expect(release).toMatch(/scripts\/validate-updater-signing-secret\.mjs/);
-    expect(release).toMatch(/codesign --verify --deep --strict/);
+    expect(release).not.toMatch(/codesign --verify --deep --strict/);
   });
 
   it("generates release notes from git-cliff instead of a static body", () => {

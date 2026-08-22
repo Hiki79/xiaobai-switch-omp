@@ -1,9 +1,6 @@
 /** Desktop rustc targets the Release workflow must build. */
 export const REQUIRED_RELEASE_TARGETS = [
-  "aarch64-apple-darwin",
-  "x86_64-apple-darwin",
   "x86_64-pc-windows-msvc",
-  "aarch64-pc-windows-msvc",
 ] as const;
 
 export type PnpmSetup = {
