@@ -73,17 +73,22 @@ pub fn payload_files(dir: &Path) -> Vec<String> {
     files
 }
 
-pub fn prune_target_backups(target: TargetKind, max: u32) -> AppResult<usize> {
-    prune_target_backups_in(&backups_dir()?, target, max)
-}
-
-pub fn prune_all(max: u32) -> AppResult<usize> {
-    let mut n = 0;
-    n += prune_target_backups(TargetKind::ClaudeCode, max)?;
-    n += prune_target_backups(TargetKind::Codex, max)?;
-    n += prune_target_backups(TargetKind::Omp, max)?;
-    n += prune_target_backups(TargetKind::Zcode, max)?;
-    n += prune_target_backups(TargetKind::Dsh, max)?;
+pub fn prune_target_backups_in(root: &Path, target: TargetKind, max: u32) -> AppResult<usize> {
+    let dir = root.join(target.as_str());
+    if !dir.exists() {
+        return Ok(0);
+    }
+    let max = max as usize;
+    let mut stamps: Vec<(i64, PathBuf)> = Vec::new();
+    for entry in fs::read_dir(&dir)?.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
             .to_string();
         if payload_files(&path).is_empty() {
             let _ = fs::remove_dir_all(&path);
@@ -100,6 +105,21 @@ pub fn prune_all(max: u32) -> AppResult<usize> {
         removed += 1;
     }
     Ok(removed)
+}
+
+pub fn prune_target_backups(target: TargetKind, max: u32) -> AppResult<usize> {
+    prune_target_backups_in(&backups_dir()?, target, max)
+}
+
+pub fn prune_all(max: u32) -> AppResult<usize> {
+    let mut n = 0;
+    n += prune_target_backups(TargetKind::ClaudeCode, max)?;
+    n += prune_target_backups(TargetKind::Codex, max)?;
+    n += prune_target_backups(TargetKind::Omp, max)?;
+    n += prune_target_backups(TargetKind::Zcode, max)?;
+    n += prune_target_backups(TargetKind::Dsh, max)?;
+    n += prune_target_backups(TargetKind::Pi, max)?;
+    Ok(n)
 }
 
 pub fn list_backups_in(
