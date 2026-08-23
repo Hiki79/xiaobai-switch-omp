@@ -3,7 +3,7 @@ import { Button } from "antd";
 import ClaudeCode from "@lobehub/icons/es/ClaudeCode";
 import Codex from "@lobehub/icons/es/Codex";
 import DeepSeek from "@lobehub/icons/es/DeepSeek";
-import { Code2, Pi as PiIcon } from "lucide-react";
+import { Bot, Code2, Pi as PiIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ApplyTargetTab } from "@/stores";
 
@@ -11,7 +11,7 @@ const CYCLE_MS = 3000;
 const FADE_MS = 180;
 
 /** Rotation order for the "go apply" button. */
-const CYCLE: ApplyTargetTab[] = ["claude_code", "codex", "omp", "zcode", "dsh"];
+const CYCLE: ApplyTargetTab[] = ["claude_code", "codex", "omp", "zcode", "dsh", "pi"];
 
 const TAB_ICONS: Record<ApplyTargetTab, React.ReactNode> = {
   claude_code: <ClaudeCode size={14} />,
@@ -19,6 +19,7 @@ const TAB_ICONS: Record<ApplyTargetTab, React.ReactNode> = {
   omp: <PiIcon size={14} />,
   zcode: <Code2 size={14} />,
   dsh: <DeepSeek size={14} />,
+  pi: <Bot size={14} />,
 };
 
 const GO_APPLY_KEY: Record<ApplyTargetTab, string> = {
@@ -27,6 +28,7 @@ const GO_APPLY_KEY: Record<ApplyTargetTab, string> = {
   omp: "sites.goApplyOmp",
   zcode: "sites.goApplyZcode",
   dsh: "sites.goApplyDsh",
+  pi: "sites.goApplyPi",
 };
 
 interface Props {

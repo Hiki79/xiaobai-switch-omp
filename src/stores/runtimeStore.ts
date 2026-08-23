@@ -13,7 +13,7 @@ export type RuntimeStatusKind =
 
 export const RUNTIME_POLL_INTERVAL_MS = 4000;
 
-export const ALL_RUNTIME_TARGETS: TargetKind[] = ["claude_code", "codex", "omp", "zcode", "dsh"];
+export const ALL_RUNTIME_TARGETS: TargetKind[] = ["claude_code", "codex", "omp", "zcode", "dsh", "pi"];
 
 const EMPTY_STATUS: Record<TargetKind, TargetRuntimeStatus | undefined> = {
   claude_code: undefined,
@@ -21,6 +21,7 @@ const EMPTY_STATUS: Record<TargetKind, TargetRuntimeStatus | undefined> = {
   omp: undefined,
   zcode: undefined,
   dsh: undefined,
+  pi: undefined,
 };
 
 const EMPTY_KIND: Record<TargetKind, RuntimeStatusKind | undefined> = {
@@ -29,6 +30,7 @@ const EMPTY_KIND: Record<TargetKind, RuntimeStatusKind | undefined> = {
   omp: undefined,
   zcode: undefined,
   dsh: undefined,
+  pi: undefined,
 };
 
 const EMPTY_ERRORS: Record<TargetKind, string | null> = {
@@ -37,6 +39,7 @@ const EMPTY_ERRORS: Record<TargetKind, string | null> = {
   omp: null,
   zcode: null,
   dsh: null,
+  pi: null,
 };
 
 const EMPTY_STARTING: Record<TargetKind, boolean> = {
@@ -45,6 +48,7 @@ const EMPTY_STARTING: Record<TargetKind, boolean> = {
   omp: false,
   zcode: false,
   dsh: false,
+  pi: false,
 };
 
 /** Derive the aggregate status kind shown in the launch control. A failed

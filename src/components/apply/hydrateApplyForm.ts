@@ -31,6 +31,8 @@ const CODEX_EFFORTS = new Set<CodexReasoningEffort>(CODEX_EFFORT_LIST);
 export const OMP_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 /** Effort identifiers accepted by dsh's pi-ai adapter. */
 export const DSH_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+/** Effort ladder Pi accepts in settings.json thinking. */
+export const PI_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 const DEFAULT_FAMILY_LEVELS = ["low", "medium", "high", "max"];
 
@@ -222,6 +224,13 @@ export interface DshFormDefaults {
   reasoningLevel: string | undefined;
 }
 
+export interface PiFormDefaults {
+  modelId: string | undefined;
+  writeAllModels: boolean;
+  reasoningLevels: string[];
+  reasoningLevel: string | undefined;
+}
+
 /** Model ids a target currently has written (`model_ids` live summary key). */
 export function parseLiveModelIds(live: LiveSummary | undefined): string[] {
   const raw = liveStr(live, "model_ids");
@@ -380,6 +389,15 @@ export function dshReasoningLevelsForModel(modelId: string | undefined): string[
   return intersectLevels(modelId, DSH_EFFORTS);
 }
 
+/** Pi settings.json thinking options for the selected model. */
+export function piReasoningLevelsForModel(modelId: string | undefined): string[] {
+  const strictLevels = strictReasoningLevelsForModel(modelId);
+  if (strictLevels) {
+    return strictLevels.filter((level) => (PI_EFFORTS as readonly string[]).includes(level));
+  }
+  return intersectLevels(modelId, PI_EFFORTS);
+}
+
 const PREFERRED_DEFAULT_LEVELS = ["max", "xhigh", "high", "medium", "low", "minimal", "off"];
 
 /** Sensible default level: strongest the model family supports. */
@@ -505,6 +523,47 @@ export function hydrateDshForm(
     reasoningLevel: defaultReasoningLevel(
       reasoningLevels,
       onSite ? liveStr(live, "reasoning_effort") : undefined,
+    ),
+  };
+}
+
+export function hydratePiForm(
+  site: Site | null,
+  status: TargetLiveStatus | undefined,
+): PiFormDefaults {
+  const live = status?.liveSummary;
+  const onSite = appliedOnSite(site, status);
+  const selector = liveStr(live, "default_model");
+  const liveModel =
+    liveStr(live, "model") ??
+    (selector?.includes("/")
+      ? selector.slice(selector.indexOf("/") + 1)
+      : selector);
+  const modelId = onSite
+    ? (liveModel ?? site?.selectedModelId ?? undefined)
+    : (site?.selectedModelId ?? undefined);
+  const liveLevels = (liveStr(live, "reasoning_levels") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => (PI_EFFORTS as readonly string[]).includes(value));
+  const safeLevels = piReasoningLevelsForModel(modelId);
+  const strictLevels = strictReasoningLevelsForModel(modelId);
+  const reasoningLevels = strictLevels
+    ? safeLevels
+    : onSite && liveLevels.length > 0
+      ? liveLevels
+      : safeLevels;
+  const count = Number(liveStr(live, "models") ?? "1");
+  const writtenIds = parseLiveModelIds(live);
+  return {
+    modelId,
+    writeAllModels:
+      onSite &&
+      ((Number.isFinite(count) && count > 1) || writtenIds.length > 1),
+    reasoningLevels,
+    reasoningLevel: defaultReasoningLevel(
+      reasoningLevels,
+      onSite ? liveStr(live, "thinking") : undefined,
     ),
   };
 }

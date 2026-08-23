@@ -724,6 +724,23 @@ pub fn detect_status(
                             return Ok((ApplyStatus::Stale, Some("model mismatch".into())));
                         }
                     }
+                    "reasoning_levels" => {
+                        let live_levels = get_mapping(prov, "modelOverrides")
+                            .and_then(|o| o.get(&s(&b.model_id)))
+                            .and_then(Yaml::as_mapping)
+                            .and_then(|entry| entry.get(&s("thinking")))
+                            .and_then(|t| t.get(&s("levels")))
+                            .and_then(Yaml::as_sequence)
+                            .map(|list| {
+                                list.iter()
+                                    .filter_map(Yaml::as_str)
+                                    .collect::<Vec<_>>()
+                                    .join(",")
+                            });
+                        if live_levels.as_deref() != Some(expected.as_str()) {
+                            return Ok((ApplyStatus::Stale, Some("reasoning_levels mismatch".into())));
+                        }
+                    }
                     _ => {}
                 }
             }

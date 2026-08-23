@@ -126,6 +126,12 @@ pub fn delete_site(
                         settings.dsh_home_override.as_deref(),
                     );
                 }
+                crate::domain::TargetKind::Pi => {
+                    let _ = crate::adapters::pi::surgical_revert(
+                        &b,
+                        settings.pi_home_override.as_deref(),
+                    );
+                }
             }
             state
                 .db

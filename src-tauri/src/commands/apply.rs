@@ -147,6 +147,9 @@ pub fn apply_site(
     dsh_write_all_models: Option<bool>,
     dsh_reasoning_levels: Option<Vec<String>>,
     dsh_reasoning_level: Option<String>,
+    pi_write_all_models: Option<bool>,
+    pi_reasoning_levels: Option<Vec<String>>,
+    pi_reasoning_level: Option<String>,
     // Checked site model ids for write-all targets; None means every model.
     catalog_model_ids: Option<Vec<String>>,
 ) -> AppResult<ApplyResult> {
@@ -199,10 +202,12 @@ pub fn apply_site(
     let omp_write_all = omp_write_all_models.unwrap_or(false);
     let zcode_write_all = zcode_write_all_models.unwrap_or(false);
     let dsh_write_all = dsh_write_all_models.unwrap_or(false);
+    let pi_write_all = pi_write_all_models.unwrap_or(false);
     let need_catalog = (write_all && targets.contains(&TargetKind::Codex))
         || (omp_write_all && targets.contains(&TargetKind::Omp))
         || (zcode_write_all && targets.contains(&TargetKind::Zcode))
-        || (dsh_write_all && targets.contains(&TargetKind::Dsh));
+        || (dsh_write_all && targets.contains(&TargetKind::Dsh))
+        || (pi_write_all && targets.contains(&TargetKind::Pi));
     let catalog_models = if need_catalog {
         let models = state
             .db
@@ -278,6 +283,13 @@ pub fn apply_site(
         catalog_models: catalog_models.clone(),
         reasoning_levels: dsh_reasoning_levels.unwrap_or_default(),
         reasoning_level: non_empty(dsh_reasoning_level),
+    };
+
+    let pi_opts = crate::domain::PiApplyOptions {
+        write_all_models: pi_write_all,
+        catalog_models: catalog_models.clone(),
+        reasoning_levels: pi_reasoning_levels.unwrap_or_default(),
+        reasoning_level: non_empty(pi_reasoning_level),
     };
 
     let codex_opts = CodexApplyOptions {
@@ -492,6 +504,41 @@ pub fn apply_site(
                     )),
                 }
             }
+            TargetKind::Pi => {
+                match crate::adapters::pi::apply(
+                    &site,
+                    &api_key,
+                    &model_id,
+                    &pi_opts,
+                    settings.pi_home_override.as_deref(),
+                    &backup_root,
+                ) {
+                    Ok(o) => record_success(
+                        &state,
+                        target,
+                        &site,
+                        &model_id,
+                        applied_at,
+                        &backup_root,
+                        &o.binding,
+                        &o.touched,
+                        o.backup_paths,
+                        o.live_summary,
+                        o.message,
+                        o.binding.provider_id.as_deref(),
+                        vec![],
+                    ),
+                    Err(e) => Ok(record_failure(
+                        &state,
+                        target,
+                        &site,
+                        &model_id,
+                        applied_at,
+                        &backup_root,
+                        &e,
+                    )),
+                }
+            }
         };
 
         results.push(outcome?);
@@ -603,6 +650,9 @@ pub fn revert_target(
         TargetKind::Dsh => {
             crate::adapters::dsh::surgical_revert(&binding, settings.dsh_home_override.as_deref())?;
         }
+        TargetKind::Pi => {
+            crate::adapters::pi::surgical_revert(&binding, settings.pi_home_override.as_deref())?;
+        }
     }
     state
         .db
@@ -662,6 +712,11 @@ pub fn restore_official_target(
         .map(|_| ()),
         TargetKind::Dsh => crate::adapters::dsh::restore_official(
             settings.dsh_home_override.as_deref(),
+            &backup_root,
+        )
+        .map(|_| ()),
+        TargetKind::Pi => crate::adapters::pi::restore_official(
+            settings.pi_home_override.as_deref(),
             &backup_root,
         )
         .map(|_| ()),
@@ -729,6 +784,7 @@ pub fn list_backups(
             TargetKind::Omp,
             TargetKind::Zcode,
             TargetKind::Dsh,
+            TargetKind::Pi,
         ]
     };
     backup::list_backups_in(&root, &targets, |dir| {

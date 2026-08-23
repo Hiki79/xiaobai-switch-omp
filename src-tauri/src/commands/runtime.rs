@@ -7,16 +7,17 @@ use crate::state::AppState;
 use std::time::Duration;
 use tauri::{Manager, State};
 
-/// All five launchable targets, in stable order.
-pub const ALL_TARGET_KINDS: [TargetKind; 5] = [
+/// All six launchable targets, in stable order.
+pub const ALL_TARGET_KINDS: [TargetKind; 6] = [
     TargetKind::ClaudeCode,
     TargetKind::Codex,
     TargetKind::Omp,
     TargetKind::Zcode,
     TargetKind::Dsh,
+    TargetKind::Pi,
 ];
 
-fn kinds() -> [TargetKind; 5] {
+fn kinds() -> [TargetKind; 6] {
     ALL_TARGET_KINDS
 }
 
@@ -264,13 +265,14 @@ mod tests {
     }
 
     #[test]
-    fn all_five_kinds_enter_runtime_status_detection() {
+    fn all_six_kinds_enter_runtime_status_detection() {
         let zcode_exe = "C:/tools/ZCode.exe";
         let tools = vec![
             tool(TargetKind::ClaudeCode, Some("C:/tools/claude.cmd")),
             tool(TargetKind::Codex, Some("C:/tools/codex.cmd")),
             tool(TargetKind::Omp, Some("C:/tools/omp.cmd")),
             tool(TargetKind::Dsh, Some("C:/tools/dsh.cmd")),
+            tool(TargetKind::Pi, Some("C:/tools/pi.cmd")),
             tool(TargetKind::Zcode, Some(zcode_exe)),
         ];
         let processes = vec![
@@ -283,7 +285,7 @@ mod tests {
             .map(|kind| status_for(*kind, &tools, &processes))
             .collect();
 
-        assert_eq!(statuses.len(), 5);
+        assert_eq!(statuses.len(), 6);
         let by_kind = |k: TargetKind| statuses.iter().find(|s| s.target == k).unwrap();
 
         assert!(by_kind(TargetKind::ClaudeCode).installed);
@@ -294,6 +296,8 @@ mod tests {
         assert!(!by_kind(TargetKind::Omp).running);
         assert!(by_kind(TargetKind::Dsh).installed);
         assert!(!by_kind(TargetKind::Dsh).running);
+        assert!(by_kind(TargetKind::Pi).installed);
+        assert!(!by_kind(TargetKind::Pi).running);
         // ZCode resolves its GUI executable (here via the probed path) and
         // reports running when that executable owns a process.
         assert!(by_kind(TargetKind::Zcode).installed);

@@ -4,7 +4,7 @@ export type SiteProtocol = "openai_compatible" | "openai_native" | "anthropic";
 /** Only affects Claude Code auth env key name. Codex ignores this. */
 export type ClaudeAuthKeyStyle = "anthropic_auth_token" | "anthropic_api_key";
 
-export type TargetKind = "claude_code" | "codex" | "omp" | "zcode" | "dsh";
+export type TargetKind = "claude_code" | "codex" | "omp" | "zcode" | "dsh" | "pi";
 
 export type ProxyMode = "system" | "none" | "custom";
 export type ProxyProtocol = "http" | "https" | "socks5";
@@ -188,8 +188,14 @@ export interface ApplyRequest {
   dshReasoningLevels?: string[] | null;
   /** Default reasoning effort for newly created dsh sessions. */
   dshReasoningLevel?: string | null;
+  /** Write the site model list into the Pi custom provider route. */
+  piWriteAllModels?: boolean;
+  /** Effort ladder accepted by Pi (off|minimal|low|medium|high|xhigh|max). */
+  piReasoningLevels?: string[] | null;
+  /** Default thinking level written into settings.json thinking. */
+  piReasoningLevel?: string | null;
   /** Checked site model ids to write when a write-all toggle is on
-   * (applies to codex/omp/zcode/dsh); null/undefined means "every site model". */
+   * (applies to codex/omp/zcode/dsh/pi); null/undefined means "every site model". */
   catalogModelIds?: string[] | null;
 }
 
@@ -221,6 +227,7 @@ export interface AppSettings {
   ompHomeOverride: string | null;
   zcodeHomeOverride: string | null;
   dshHomeOverride: string | null;
+  piHomeOverride: string | null;
   codexEnvInjectMode: "auto" | "shell_rc" | "user_env" | "file_only";
   forceExclusiveClaudeAuthKey: boolean;
   autoCheckUpdate: boolean;

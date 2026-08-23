@@ -6,6 +6,7 @@ import { ClaudeApplyPanel } from "@/components/apply/ClaudeApplyPanel";
 import { CodexApplyPanel } from "@/components/apply/CodexApplyPanel";
 import { DshApplyPanel } from "@/components/apply/DshApplyPanel";
 import { OmpApplyPanel } from "@/components/apply/OmpApplyPanel";
+import { PiApplyPanel } from "@/components/apply/PiApplyPanel";
 import { ZcodeApplyPanel } from "@/components/apply/ZcodeApplyPanel";
 import { useDeferredTabContent } from "@/hooks/useDeferredTabContent";
 import { useRuntimeStore } from "@/stores/runtimeStore";
@@ -112,6 +113,18 @@ export function ApplyPage() {
             aria-hidden={applyTab !== "dsh"}
           >
             <DshApplyPanel />
+          </div>
+        )}
+        {mounted.has("pi") && (
+          <div
+            className="h-full min-h-0"
+            style={{
+              display: applyTab === "pi" && !showSkeleton ? "flex" : "none",
+              flexDirection: "column",
+            }}
+            aria-hidden={applyTab !== "pi"}
+          >
+            <PiApplyPanel />
           </div>
         )}
       </div>

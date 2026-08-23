@@ -29,6 +29,7 @@ pub struct TrayLabels {
     pub omp: &'static str,
     pub zcode: &'static str,
     pub dsh: &'static str,
+    pub pi: &'static str,
     pub applied: &'static str,
     pub stale: &'static str,
     pub orphan: &'static str,
@@ -53,6 +54,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             omp: "omp",
             zcode: "ZCode",
             dsh: "dsh",
+            pi: "Pi",
             applied: "Applied",
             stale: "Stale",
             orphan: "Orphan",
@@ -74,6 +76,7 @@ pub fn tray_labels(language: &str) -> TrayLabels {
             omp: "omp",
             zcode: "ZCode",
             dsh: "dsh",
+            pi: "Pi",
             applied: "已应用",
             stale: "已过期",
             orphan: "配置游离",
@@ -104,6 +107,7 @@ fn kind_label(labels: &TrayLabels, kind: TargetKind) -> &'static str {
         TargetKind::Omp => labels.omp,
         TargetKind::Zcode => labels.zcode,
         TargetKind::Dsh => labels.dsh,
+        TargetKind::Pi => labels.pi,
     }
 }
 
@@ -162,10 +166,11 @@ pub fn format_tooltip(
     omp: &str,
     zcode: &str,
     dsh: &str,
+    pi: &str,
 ) -> String {
     format!(
-        "{}\n{}\n{}\n{}\n{}\n{}",
-        labels.header, claude, codex, omp, zcode, dsh
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        labels.header, claude, codex, omp, zcode, dsh, pi
     )
 }
 
@@ -213,6 +218,8 @@ pub struct TraySnapshot {
     pub zcode_model: Option<String>,
     pub dsh_line: String,
     pub dsh_model: Option<String>,
+    pub pi_line: String,
+    pub pi_model: Option<String>,
     pub tooltip: String,
     pub sites: Vec<QuickSite>,
     pub claude_running: bool,
@@ -220,6 +227,7 @@ pub struct TraySnapshot {
     pub omp_running: bool,
     pub zcode_running: bool,
     pub dsh_running: bool,
+    pub pi_running: bool,
 }
 
 impl TraySnapshot {
@@ -260,6 +268,13 @@ impl TraySnapshot {
             None,
             None,
         );
+        let pi = format_target_status_line(
+            &labels,
+            TargetKind::Pi,
+            ApplyStatus::NotApplied,
+            None,
+            None,
+        );
         Self {
             language: language.to_string(),
             claude_line: claude.clone(),
@@ -272,13 +287,16 @@ impl TraySnapshot {
             zcode_model: None,
             dsh_line: dsh.clone(),
             dsh_model: None,
-            tooltip: format_tooltip(&labels, &claude, &codex, &omp, &zcode, &dsh),
+            pi_line: pi.clone(),
+            pi_model: None,
+            tooltip: format_tooltip(&labels, &claude, &codex, &omp, &zcode, &dsh, &pi),
             sites: vec![],
             claude_running: false,
             codex_running: false,
             omp_running: false,
             zcode_running: false,
             dsh_running: false,
+            pi_running: false,
         }
     }
 }
@@ -362,6 +380,10 @@ fn build_menu(
     if let Some(model) = &snapshot.dsh_model {
         append_plain_item(app, &menu, "status_dsh_model", model, false)?;
     }
+    append_plain_item(app, &menu, "status_pi", &snapshot.pi_line, false)?;
+    if let Some(model) = &snapshot.pi_model {
+        append_plain_item(app, &menu, "status_pi_model", model, false)?;
+    }
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     append_plain_item(
@@ -397,6 +419,13 @@ fn build_menu(
         &menu,
         "launch:dsh",
         &format_launch_line(&labels, snapshot.dsh_running, TargetKind::Dsh),
+        true,
+    )?;
+    append_plain_item(
+        app,
+        &menu,
+        "launch:pi",
+        &format_launch_line(&labels, snapshot.pi_running, TargetKind::Pi),
         true,
     )?;
 
@@ -475,6 +504,7 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
         TargetKind::Omp,
         TargetKind::Zcode,
         TargetKind::Dsh,
+        TargetKind::Pi,
     ] {
         let status = statuses.iter().find(|s| s.kind == kind);
         let line = match status {
@@ -536,6 +566,8 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
         zcode_model: lines[3].2.clone(),
         dsh_line: lines[4].1.clone(),
         dsh_model: lines[4].2.clone(),
+        pi_line: lines[5].1.clone(),
+        pi_model: lines[5].2.clone(),
         tooltip,
         sites: pick_quick_sites(&rows, &applied, QUICK_SITE_LIMIT),
         claude_running: is_running(TargetKind::ClaudeCode),
@@ -543,6 +575,7 @@ fn collect_snapshot(app: &AppHandle) -> TraySnapshot {
         omp_running: is_running(TargetKind::Omp),
         zcode_running: is_running(TargetKind::Zcode),
         dsh_running: is_running(TargetKind::Dsh),
+        pi_running: is_running(TargetKind::Pi),
     }
 }
 
@@ -619,7 +652,9 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
         | "status_zcode"
         | "status_zcode_model"
         | "status_dsh"
-        | "status_dsh_model" => {}
+        | "status_dsh_model"
+        | "status_pi"
+        | "status_pi_model" => {}
         other if other.starts_with(APPLY_PREFIX) => {
             let site_id = other[APPLY_PREFIX.len()..].to_string();
             if site_id.is_empty() {
@@ -789,13 +824,15 @@ mod tests {
             "omp · 未应用",
             "ZCode · 未应用",
             "dsh · 未应用",
+            "Pi · 未应用",
         );
         assert!(tip.starts_with("XiaoBaiSwitch"));
         assert!(tip.contains("Claude Code"));
         assert!(tip.contains("Codex"));
         assert!(tip.contains("ZCode"));
         assert!(tip.contains("dsh"));
-        assert_eq!(tip.lines().count(), 6);
+        assert!(tip.contains("Pi"));
+        assert_eq!(tip.lines().count(), 7);
     }
 
     #[test]

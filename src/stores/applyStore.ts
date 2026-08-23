@@ -115,6 +115,9 @@ export const useApplyStore = create<ApplyState>((set, get) => ({
         dshWriteAllModels: req.dshWriteAllModels ?? false,
         dshReasoningLevels: req.dshReasoningLevels ?? null,
         dshReasoningLevel: req.dshReasoningLevel ?? null,
+        piWriteAllModels: req.piWriteAllModels ?? false,
+        piReasoningLevels: req.piReasoningLevels ?? null,
+        piReasoningLevel: req.piReasoningLevel ?? null,
         catalogModelIds: req.catalogModelIds ?? null,
       });
       set({ lastResult: result });

@@ -43,6 +43,7 @@ pub(crate) fn list_target_status_with_tools(
         TargetKind::Omp,
         TargetKind::Zcode,
         TargetKind::Dsh,
+        TargetKind::Pi,
     ] {
         let binding = bindings.iter().find(|b| b.target == kind);
         let tool = tools.iter().find(|t| t.kind == kind);
@@ -93,6 +94,12 @@ pub(crate) fn list_target_status_with_tools(
                 api_key.as_deref(),
                 settings.dsh_home_override.as_deref(),
             )?,
+            TargetKind::Pi => crate::adapters::pi::detect_status(
+                binding,
+                site.as_ref(),
+                api_key.as_deref(),
+                settings.pi_home_override.as_deref(),
+            )?,
         };
 
         let live_summary = match kind {
@@ -110,6 +117,9 @@ pub(crate) fn list_target_status_with_tools(
             }
             TargetKind::Dsh => {
                 crate::adapters::dsh::live_summary(settings.dsh_home_override.as_deref())?
+            }
+            TargetKind::Pi => {
+                crate::adapters::pi::live_summary(settings.pi_home_override.as_deref())?
             }
         };
 
@@ -139,6 +149,11 @@ pub(crate) fn list_target_status_with_tools(
                     .display()
                     .to_string()
             }
+            TargetKind::Pi => {
+                crate::adapters::pi::models_path(settings.pi_home_override.as_deref())?
+                    .display()
+                    .to_string()
+            }
         };
 
         out.push(TargetLiveStatus {
@@ -149,7 +164,9 @@ pub(crate) fn list_target_status_with_tools(
                         settings.zcode_home_override.as_deref(),
                     )?)
                 || (kind == TargetKind::Dsh
-                    && crate::adapters::dsh::is_installed(settings.dsh_home_override.as_deref())?),
+                    && crate::adapters::dsh::is_installed(settings.dsh_home_override.as_deref())?)
+                || (kind == TargetKind::Pi
+                    && crate::adapters::pi::is_installed(settings.pi_home_override.as_deref())?),
             version: tool.and_then(|t| t.version.clone()),
             config_path,
             status,
@@ -189,6 +206,7 @@ pub(crate) fn detect_cli_tools_cached(force: bool) -> Vec<CliToolInfo> {
         cli_detect::probe_tool(TargetKind::Omp, "omp"),
         cli_detect::probe_tool(TargetKind::Zcode, "zcode"),
         cli_detect::probe_tool(TargetKind::Dsh, "dsh"),
+        cli_detect::probe_tool(TargetKind::Pi, "pi"),
     ];
     *CLI_PROBE_CACHE.lock() = Some(CliProbeCache {
         tools: tools.clone(),
@@ -236,6 +254,9 @@ pub fn cleanup_orphan_target(
             TargetKind::Dsh => {
                 crate::adapters::dsh::surgical_revert(&b, settings.dsh_home_override.as_deref())?;
             }
+            TargetKind::Pi => {
+                crate::adapters::pi::surgical_revert(&b, settings.pi_home_override.as_deref())?;
+            }
         }
         state
             .db
@@ -252,7 +273,7 @@ mod tests {
     #[test]
     fn cli_probe_cache_reuses_last_result_until_forced() {
         let first = detect_cli_tools_cached(true);
-        assert_eq!(first.len(), 5);
+        assert_eq!(first.len(), 6);
         let cached = detect_cli_tools_cached(false);
         assert_eq!(cached[0].kind, first[0].kind);
         assert_eq!(cached[1].kind, first[1].kind);
@@ -264,5 +285,7 @@ mod tests {
         assert_eq!(cached[3].installed, first[3].installed);
         assert_eq!(cached[4].kind, first[4].kind);
         assert_eq!(cached[4].installed, first[4].installed);
+        assert_eq!(cached[5].kind, first[5].kind);
+        assert_eq!(cached[5].installed, first[5].installed);
     }
 }

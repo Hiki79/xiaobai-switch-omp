@@ -292,6 +292,7 @@ function PathsSection() {
   const [omp, setOmp] = useState(settings.ompHomeOverride ?? "");
   const [zcode, setZcode] = useState(settings.zcodeHomeOverride ?? "");
   const [dsh, setDsh] = useState(settings.dshHomeOverride ?? "");
+  const [pi, setPi] = useState(settings.piHomeOverride ?? "");
 
   useEffect(() => {
     setClaude(settings.claudeHomeOverride ?? "");
@@ -299,12 +300,14 @@ function PathsSection() {
     setOmp(settings.ompHomeOverride ?? "");
     setZcode(settings.zcodeHomeOverride ?? "");
     setDsh(settings.dshHomeOverride ?? "");
+    setPi(settings.piHomeOverride ?? "");
   }, [
     settings.claudeHomeOverride,
     settings.codexHomeOverride,
     settings.ompHomeOverride,
     settings.zcodeHomeOverride,
     settings.dshHomeOverride,
+    settings.piHomeOverride,
   ]);
 
   const onSave = async () => {
@@ -314,6 +317,7 @@ function PathsSection() {
       ompHomeOverride: omp.trim() || null,
       zcodeHomeOverride: zcode.trim() || null,
       dshHomeOverride: dsh.trim() || null,
+      piHomeOverride: pi.trim() || null,
     });
     message.success(t("settings.pathsSaved"));
   };
@@ -358,6 +362,14 @@ function PathsSection() {
           <Input
             value={dsh}
             onChange={(event) => setDsh(event.target.value)}
+            placeholder={t("settings.pathPlaceholder")}
+          />
+        </div>
+        <div className="mb-3">
+          <div className="mb-1 text-sm">{t("settings.piHome")}</div>
+          <Input
+            value={pi}
+            onChange={(event) => setPi(event.target.value)}
             placeholder={t("settings.pathPlaceholder")}
           />
         </div>
@@ -582,6 +594,7 @@ function AboutSection() {
             <li>~/.zcode/v2/config.json</li>
             <li>~/.dsh/settings.yaml</li>
             <li>~/.dsh/.credentials.yaml</li>
+            <li>~/.pi/agent/auth.json</li>
           </ul>
           <Button className="mt-3" onClick={() => void invoke("open_path", { path: paths.appDir })}>
             {t("settings.openAppDir")}

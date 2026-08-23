@@ -69,6 +69,7 @@ pub enum TargetKind {
     Omp,
     Zcode,
     Dsh,
+    Pi,
 }
 
 impl TargetKind {
@@ -79,6 +80,7 @@ impl TargetKind {
             Self::Omp => "omp",
             Self::Zcode => "zcode",
             Self::Dsh => "dsh",
+            Self::Pi => "pi",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
@@ -88,6 +90,7 @@ impl TargetKind {
             "omp" => Some(Self::Omp),
             "zcode" => Some(Self::Zcode),
             "dsh" => Some(Self::Dsh),
+            "pi" => Some(Self::Pi),
             _ => None,
         }
     }
@@ -436,6 +439,20 @@ pub struct DshApplyOptions {
     pub reasoning_level: Option<String>,
 }
 
+/// Extra options for Pi coding agent apply. Pi manages custom providers in
+/// `~/.pi/agent/models.json` and default preferences in `settings.json`.
+#[derive(Debug, Clone, Default)]
+pub struct PiApplyOptions {
+    pub write_all_models: bool,
+    /// Site models written under the managed provider when `write_all_models`
+    /// is true; extra models are pruned when it is false.
+    pub catalog_models: Vec<CatalogModel>,
+    /// Effort ladder accepted by Pi (off|minimal|low|medium|high|xhigh|max).
+    pub reasoning_levels: Vec<String>,
+    /// Default level written into settings.json `thinking`.
+    pub reasoning_level: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyTargetResult {
@@ -473,6 +490,8 @@ pub struct AppSettings {
     pub zcode_home_override: Option<String>,
     #[serde(default)]
     pub dsh_home_override: Option<String>,
+    #[serde(default)]
+    pub pi_home_override: Option<String>,
     pub codex_env_inject_mode: String,
     pub force_exclusive_claude_auth_key: bool,
     #[serde(default = "default_true")]
@@ -499,7 +518,7 @@ pub struct AppSettings {
     #[serde(default)]
     pub start_in_tray: bool,
     /// Last chosen launch working directory per target (`claude_code`, `codex`,
-    /// `omp`, `dsh`; ZCode is a GUI and never stores one). Missing entries fall
+    /// `omp`, `dsh`, `pi`; ZCode is a GUI and never stores one). Missing entries fall
     /// back to the user home directory.
     #[serde(default)]
     pub launch_working_directories: HashMap<String, String>,
@@ -568,6 +587,7 @@ impl Default for AppSettings {
             omp_home_override: None,
             zcode_home_override: None,
             dsh_home_override: None,
+            pi_home_override: None,
             codex_env_inject_mode: "auto".into(),
             force_exclusive_claude_auth_key: false,
             auto_check_update: true,

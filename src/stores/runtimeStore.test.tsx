@@ -52,6 +52,7 @@ function resetStore() {
       omp: undefined,
       zcode: undefined,
       dsh: undefined,
+      pi: undefined,
     },
     statusKind: {
       claude_code: undefined,
@@ -59,6 +60,7 @@ function resetStore() {
       omp: undefined,
       zcode: undefined,
       dsh: undefined,
+      pi: undefined,
     },
     launchErrors: {
       claude_code: null,
@@ -66,6 +68,7 @@ function resetStore() {
       omp: null,
       zcode: null,
       dsh: null,
+      pi: null,
     },
     starting: {
       claude_code: false,
@@ -73,6 +76,7 @@ function resetStore() {
       omp: false,
       zcode: false,
       dsh: false,
+      pi: false,
     },
     loading: false,
     hydrated: false,
@@ -116,13 +120,14 @@ describe("runtimeStore", () => {
     cleanup();
   });
 
-  it("loads statuses for all five targets", async () => {
+  it("loads statuses for all six targets", async () => {
     seedRuntimeStatuses([
       runtime("claude_code", { running: true, pid: 11 }),
       runtime("codex"),
       runtime("omp", { installed: false }),
       runtime("zcode", { running: true, pid: 12 }),
       runtime("dsh"),
+      runtime("pi"),
     ]);
     await act(async () => {
       await useRuntimeStore.getState().loadRuntimeStatuses();
@@ -136,6 +141,7 @@ describe("runtimeStore", () => {
     expect(state.statusKind.omp).toBe("not_installed");
     expect(state.statusKind.zcode).toBe("running");
     expect(state.statusKind.dsh).toBe("not_running");
+    expect(state.statusKind.pi).toBe("not_running");
   });
 
   it("blocks duplicate launch requests while one is in flight", async () => {

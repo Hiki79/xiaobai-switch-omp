@@ -13,6 +13,7 @@ const DEFAULT: AppSettings = {
   ompHomeOverride: null,
   zcodeHomeOverride: null,
   dshHomeOverride: null,
+  piHomeOverride: null,
   codexEnvInjectMode: "auto",
   forceExclusiveClaudeAuthKey: false,
   autoCheckUpdate: true,

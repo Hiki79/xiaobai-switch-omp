@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   ompHomeOverride: null,
   zcodeHomeOverride: null,
   dshHomeOverride: null,
+  piHomeOverride: null,
   codexEnvInjectMode: "auto",
   forceExclusiveClaudeAuthKey: false,
   autoCheckUpdate: true,
@@ -127,11 +128,26 @@ function defaultTargetStatuses(): TargetLiveStatus[] {
       lastAppliedAt: null,
       staleReason: null,
     },
+    {
+      kind: "pi",
+      installed: false,
+      version: null,
+      configPath: "~/.pi/agent/models.json",
+      status: "not_applied",
+      appliedSiteId: null,
+      appliedSiteName: null,
+      appliedModelId: null,
+      providerId: null,
+      orphan: false,
+      liveSummary: {},
+      lastAppliedAt: null,
+      staleReason: null,
+    },
   ];
 }
 
 function defaultRuntimeStatuses(): TargetRuntimeStatus[] {
-  const kinds: TargetKind[] = ["claude_code", "codex", "omp", "zcode", "dsh"];
+  const kinds: TargetKind[] = ["claude_code", "codex", "omp", "zcode", "dsh", "pi"];
   return kinds.map((target) => ({
     target,
     installed: false,
@@ -652,6 +668,7 @@ export async function handleBrowserCommand<T>(
         { kind: "omp", installed: false, version: null, path: null },
         { kind: "zcode", installed: false, version: null, path: null },
         { kind: "dsh", installed: false, version: null, path: null },
+        { kind: "pi", installed: false, version: null, path: null },
       ];
       return tools as T;
     }

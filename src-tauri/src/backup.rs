@@ -84,25 +84,6 @@ pub fn prune_all(max: u32) -> AppResult<usize> {
     n += prune_target_backups(TargetKind::Omp, max)?;
     n += prune_target_backups(TargetKind::Zcode, max)?;
     n += prune_target_backups(TargetKind::Dsh, max)?;
-    Ok(n)
-}
-
-pub fn prune_target_backups_in(root: &Path, target: TargetKind, max: u32) -> AppResult<usize> {
-    let max = clamp_max_backup_copies(max) as usize;
-    let dir = root.join(target.as_str());
-    if !dir.exists() {
-        return Ok(0);
-    }
-    let mut stamps: Vec<(i64, PathBuf)> = Vec::new();
-    for entry in fs::read_dir(&dir)?.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
             .to_string();
         if payload_files(&path).is_empty() {
             let _ = fs::remove_dir_all(&path);
@@ -191,6 +172,8 @@ pub fn parse_backup_id(id: &str) -> AppResult<(TargetKind, String)> {
         (TargetKind::Zcode, rest)
     } else if let Some(rest) = id.strip_prefix("dsh-") {
         (TargetKind::Dsh, rest)
+    } else if let Some(rest) = id.strip_prefix("pi-") {
+        (TargetKind::Pi, rest)
     } else {
         return Err(AppError::new("validation_failed", "invalid backup id"));
     };
@@ -259,6 +242,15 @@ pub fn mapped_dest(
         (TargetKind::Dsh, ".credentials.yaml") => Some(crate::adapters::dsh::credentials_path(
             settings.dsh_home_override.as_deref(),
         )?),
+        (TargetKind::Pi, "models.json") => Some(crate::adapters::pi::models_path(
+            settings.pi_home_override.as_deref(),
+        )?),
+        (TargetKind::Pi, "auth.json") => Some(crate::adapters::pi::auth_path(
+            settings.pi_home_override.as_deref(),
+        )?),
+        (TargetKind::Pi, "settings.json") => Some(crate::adapters::pi::settings_path(
+            settings.pi_home_override.as_deref(),
+        )?),
         _ => None,
     })
 }
@@ -278,6 +270,9 @@ fn dest_is_allowed(dest: &Path, settings: &AppSettings) -> bool {
         roots.push(p);
     }
     if let Ok(p) = crate::paths::resolve_dsh_home(settings.dsh_home_override.as_deref()) {
+        roots.push(p);
+    }
+    if let Ok(p) = crate::paths::resolve_pi_home(settings.pi_home_override.as_deref()) {
         roots.push(p);
     }
     if let Ok(p) = crate::paths::app_dir() {
