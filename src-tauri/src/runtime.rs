@@ -213,8 +213,7 @@ pub fn resolve_working_dir(
     let requested = requested.filter(|s| !s.trim().is_empty());
     let dir = match requested {
         Some(raw) => PathBuf::from(raw.trim()),
-        None => last_working_dir(settings, kind)
-            .unwrap_or(crate::paths::home_dir()?),
+        None => last_working_dir(settings, kind).unwrap_or(crate::paths::home_dir()?),
     };
     if !dir.is_dir() {
         return Err(AppError::new(
@@ -265,28 +264,35 @@ pub fn build_tui_launch_commands(exe: &Path, workdir: &Path) -> Vec<LaunchComman
                 program: "wt.exe".into(),
                 args: vec![
                     "new-tab".into(),
-                    "--workingDirectory".into(),
+                    "--startingDirectory".into(),
                     dir_str.clone(),
-                    "--".into(),
-                    exe_str.clone(),
+                    "cmd.exe".into(),
+                    "/d".into(),
+                    "/k".into(),
+                    cmd_quoted(exe),
                 ],
                 cwd: None,
             },
+            // Windows PowerShell 5.1 silently ignores `-WorkingDirectory`, so
+            // the directory is passed twice: inherited via the spawned cwd and
+            // set explicitly before invoking the target (profiles may cd away).
             LaunchCommand {
                 program: "powershell.exe".into(),
                 args: vec![
                     "-NoExit".into(),
-                    "-WorkingDirectory".into(),
-                    dir_str.clone(),
                     "-Command".into(),
-                    format!("& '{}'", escape_ps_single(&exe_str)),
+                    format!(
+                        "Set-Location -LiteralPath '{}'; & '{}'",
+                        escape_ps_single(&dir_str),
+                        escape_ps_single(&exe_str)
+                    ),
                 ],
-                cwd: None,
+                cwd: Some(dir_str.clone()),
             },
             LaunchCommand {
                 program: "cmd.exe".into(),
                 args: vec!["/d".into(), "/k".into(), cmd_quoted(exe)],
-                cwd: None,
+                cwd: Some(dir_str),
             },
         ]
     }
@@ -366,9 +372,15 @@ fn spawn_one(cmd: &LaunchCommand, extra_env: Option<&HashMap<String, String>>) -
 /// Try launch candidates in order until one starts (missing wt.exe falls
 /// through to PowerShell, then cmd.exe). A single failed candidate is only an
 /// error when every candidate failed.
-pub fn try_spawn(candidates: &[LaunchCommand], extra_env: Option<&HashMap<String, String>>) -> AppResult<()> {
+pub fn try_spawn(
+    candidates: &[LaunchCommand],
+    extra_env: Option<&HashMap<String, String>>,
+) -> AppResult<()> {
     if candidates.is_empty() {
-        return Err(AppError::new("launch_failed", "no launch candidate available"));
+        return Err(AppError::new(
+            "launch_failed",
+            "no launch candidate available",
+        ));
     }
     let mut last_err: Option<AppError> = None;
     for cmd in candidates {
@@ -485,8 +497,7 @@ pub fn redact_launch_error(message: impl Into<String>) -> String {
             let looks_like_name = secret_name_markers
                 .iter()
                 .any(|marker| lower.contains(marker));
-            let looks_like_token =
-                lower.contains("token") && !lower.contains("tokeniz");
+            let looks_like_token = lower.contains("token") && !lower.contains("tokeniz");
             let looks_like_secret_value = lower.starts_with("sk-")
                 || lower.starts_with("sk_")
                 || lower.starts_with("xai-")
@@ -546,10 +557,7 @@ mod tests {
 
     #[test]
     fn resolve_missing_tool_is_not_installed() {
-        assert_eq!(
-            resolve_target_executable(TargetKind::Dsh, &[]),
-            None
-        );
+        assert_eq!(resolve_target_executable(TargetKind::Dsh, &[]), None);
     }
 
     #[test]
@@ -584,10 +592,17 @@ mod tests {
     fn working_dir_missing_is_rejected() {
         let settings = AppSettings::default();
         let missing = tempfile::tempdir().unwrap().path().join("nope");
-        let err = resolve_working_dir(Some(missing.display().to_string()), &settings, TargetKind::Omp)
-            .unwrap_err();
+        let err = resolve_working_dir(
+            Some(missing.display().to_string()),
+            &settings,
+            TargetKind::Omp,
+        )
+        .unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.starts_with("working directory does not exist:"), "got: {msg}");
+        assert!(
+            msg.starts_with("working directory does not exist:"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -639,19 +654,35 @@ mod tests {
         let exe_str = exe.display().to_string();
         let dir_str = work.display().to_string();
 
-        // wt.exe passes the path as a plain argv element after `--`.
-        assert!(cmds[0].args.contains(&exe_str));
-        assert!(cmds[0]
-            .args
-            .contains(&dir_str));
+        // Windows Terminal calls cmd.exe so npm-installed .cmd/.bat shims are
+        // executable, and uses the actual Windows Terminal working-dir flag.
+        assert_eq!(cmds[0].args[0], "new-tab");
+        assert_eq!(cmds[0].args[1], "--startingDirectory");
+        assert_eq!(cmds[0].args[2], dir_str);
+        assert_eq!(&cmds[0].args[3..6], ["cmd.exe", "/d", "/k"]);
+        assert_eq!(
+            cmds[0].args[6],
+            format!("\"{}\"", exe_str.replace('"', "\"\""))
+        );
 
-        // PowerShell quotes the path inside a single-quoted & expression.
-        let ps_cmd = &cmds[1].args[4];
+        // Windows PowerShell 5.1 ignores -WorkingDirectory, so the PS fallback
+        // inherits the spawn cwd AND Set-Location runs before the target.
+        let ps_cmd = &cmds[1].args[2];
+        assert_eq!(cmds[1].program, "powershell.exe");
+        assert_eq!(cmds[1].cwd.as_deref(), Some(dir_str.as_str()));
+        assert!(ps_cmd.contains(&format!(
+            "Set-Location -LiteralPath '{}'",
+            dir_str.replace('\'', "''")
+        )));
         assert!(ps_cmd.contains(&format!("& '{}'", exe_str.replace('\'', "''"))));
         assert!(ps_cmd.contains(exe_str.as_str()));
 
         // cmd.exe wraps the path in quotes so /k survives the space.
-        assert_eq!(cmds[2].args[2], format!("\"{}\"", exe_str.replace('"', "\"\"")));
+        assert_eq!(
+            cmds[2].args[2],
+            format!("\"{}\"", exe_str.replace('"', "\"\""))
+        );
+        assert_eq!(cmds[2].cwd.as_deref(), Some(dir_str.as_str()));
     }
 
     #[cfg(windows)]
@@ -659,6 +690,18 @@ mod tests {
     fn powershell_escape_doubles_single_quotes() {
         assert_eq!(escape_ps_single("a'b"), "a''b");
         assert_eq!(escape_ps_single("plain"), "plain");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_and_cmd_candidates_carry_the_working_directory() {
+        let fake = fake_cli("omp");
+        let dir = tempfile::tempdir().unwrap();
+        let cmds = build_tui_launch_commands(&fake, dir.path());
+        // The PowerShell fallback must not rely on -WorkingDirectory (ignored
+        // by 5.1); both it and cmd.exe inherit the spawned cwd instead.
+        assert_eq!(cmds[1].cwd.as_deref(), Some(dir.path().to_str().unwrap()));
+        assert_eq!(cmds[2].cwd.as_deref(), Some(dir.path().to_str().unwrap()));
     }
 
     #[test]
@@ -720,8 +763,10 @@ mod tests {
             exe: Some(tool.clone()),
             cmd: vec![],
         }];
-        assert_eq!(gui_launch_plan(detect_running_pid(Some(&tool), &processes)),
-            GuiLaunchPlan::FocusExisting(42));
+        assert_eq!(
+            gui_launch_plan(detect_running_pid(Some(&tool), &processes)),
+            GuiLaunchPlan::FocusExisting(42)
+        );
         let empty = vec![];
         assert_eq!(
             gui_launch_plan(detect_running_pid(Some(&tool), &empty)),

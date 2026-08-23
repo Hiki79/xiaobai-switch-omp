@@ -1,7 +1,10 @@
 use crate::error::{AppError, AppResult};
-use crate::paths::{app_dir, ensure_app_dirs, home_dir};
+use crate::paths::app_dir;
+#[cfg(target_os = "macos")]
+use crate::paths::{ensure_app_dirs, home_dir};
 use std::fs;
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 const MAX_PENDING_LEN: usize = 16 * 1024;

@@ -57,7 +57,17 @@ pub fn update_site(
         .db
         .with_conn(|c| repo::site::update_site(c, &state.crypto, &id, input))?;
     if before.base_url != row.base_url {
-        let _ = crate::route_switch::sync_applied_urls(&state, &row);
+        let results = crate::route_switch::sync_applied_urls(&state, &row)?;
+        if let Some(failed) = results.iter().find(|result| !result.ok) {
+            return Err(crate::error::AppError::new(
+                "apply_failed",
+                format!(
+                    "site updated, but {} route sync failed: {}",
+                    failed.target.as_str(),
+                    failed.message
+                ),
+            ));
+        }
     }
     crate::tray::request_tray_menu_sync(&app);
     Ok(row.to_dto())
@@ -91,48 +101,41 @@ pub fn delete_site(
         let bindings = state
             .db
             .with_conn(|c| repo::binding::list_bindings_for_site(c, &id))?;
-        for b in bindings {
-            match b.target {
+        for b in &bindings {
+            let cleanup_result: crate::error::AppResult<()> = match b.target {
                 crate::domain::TargetKind::ClaudeCode => {
-                    let _ = crate::adapters::claude_code::surgical_revert(
+                    crate::adapters::claude_code::surgical_revert(
                         &b,
                         settings.claude_home_override.as_deref(),
-                    );
+                    )
                 }
                 crate::domain::TargetKind::Codex => {
-                    let _ = crate::adapters::codex::surgical_revert(
+                    crate::adapters::codex::surgical_revert(
                         &b,
                         settings.codex_home_override.as_deref(),
-                    );
+                    )?;
                     if let Some(env_key) = b.managed_env_keys.first() {
-                        let _ = crate::env_inject::remove_codex_env(&settings, env_key);
+                        crate::env_inject::remove_codex_env(&settings, env_key)?;
                     }
+                    Ok(())
                 }
                 crate::domain::TargetKind::Omp => {
-                    let _ = crate::adapters::omp::surgical_revert(
-                        &b,
-                        settings.omp_home_override.as_deref(),
-                    );
+                    crate::adapters::omp::surgical_revert(&b, settings.omp_home_override.as_deref())
                 }
-                crate::domain::TargetKind::Zcode => {
-                    let _ = crate::adapters::zcode::surgical_revert(
-                        &b,
-                        settings.zcode_home_override.as_deref(),
-                    );
-                }
+                crate::domain::TargetKind::Zcode => crate::adapters::zcode::surgical_revert(
+                    &b,
+                    settings.zcode_home_override.as_deref(),
+                ),
                 crate::domain::TargetKind::Dsh => {
-                    let _ = crate::adapters::dsh::surgical_revert(
-                        &b,
-                        settings.dsh_home_override.as_deref(),
-                    );
+                    crate::adapters::dsh::surgical_revert(&b, settings.dsh_home_override.as_deref())
                 }
                 crate::domain::TargetKind::Pi => {
-                    let _ = crate::adapters::pi::surgical_revert(
-                        &b,
-                        settings.pi_home_override.as_deref(),
-                    );
+                    crate::adapters::pi::surgical_revert(&b, settings.pi_home_override.as_deref())
                 }
-            }
+            };
+            cleanup_result?;
+        }
+        for b in bindings {
             state
                 .db
                 .with_conn(|c| repo::binding::delete_binding(c, b.target))?;

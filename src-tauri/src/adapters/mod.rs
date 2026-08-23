@@ -8,6 +8,7 @@ pub mod zcode;
 
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct RewriteOutcome {
     pub backup_paths: Vec<String>,
     pub live_summary: HashMap<String, Option<String>>,

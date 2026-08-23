@@ -37,7 +37,8 @@ pub fn probe_tool(kind: TargetKind, bin: &str) -> CliToolInfo {
 }
 
 pub fn probe_tool_with(kind: TargetKind, bin: &str, probe: &ProbeEnv) -> CliToolInfo {
-    let Some(bin_path) = find_binary(bin, &probe.path_dirs, &probe.extra_dirs) else {
+    let candidates = find_binaries(bin, &probe.path_dirs, &probe.extra_dirs);
+    let Some(fallback_path) = candidates.first().cloned() else {
         return CliToolInfo {
             kind,
             installed: false,
@@ -45,7 +46,14 @@ pub fn probe_tool_with(kind: TargetKind, bin: &str, probe: &ProbeEnv) -> CliTool
             path: None,
         };
     };
-    let version = read_version(&bin_path, probe);
+
+    let working = candidates
+        .into_iter()
+        .find_map(|path| read_version(&path, probe).map(|version| (path, version)));
+    let (bin_path, version) = match working {
+        Some((path, version)) => (path, Some(version)),
+        None => (fallback_path, None),
+    };
     CliToolInfo {
         kind,
         installed: true,
@@ -123,7 +131,15 @@ pub fn extra_bin_dirs(home: &Path) -> Vec<PathBuf> {
 }
 
 pub fn find_binary(name: &str, path_dirs: &[PathBuf], extra_dirs: &[PathBuf]) -> Option<PathBuf> {
-    find_in_dirs(name, path_dirs).or_else(|| find_in_dirs(name, extra_dirs))
+    find_binaries(name, path_dirs, extra_dirs)
+        .into_iter()
+        .next()
+}
+
+fn find_binaries(name: &str, path_dirs: &[PathBuf], extra_dirs: &[PathBuf]) -> Vec<PathBuf> {
+    let mut found = find_in_dirs(name, path_dirs);
+    found.extend(find_in_dirs(name, extra_dirs));
+    found
 }
 
 fn nvm_bin_dirs(home: &Path) -> Vec<PathBuf> {
@@ -210,9 +226,9 @@ fn candidate_names(bin: &str) -> Vec<String> {
     {
         vec![
             format!("{bin}.exe"),
-            bin.to_string(),
             format!("{bin}.cmd"),
             format!("{bin}.bat"),
+            bin.to_string(),
         ]
     }
     #[cfg(not(windows))]
@@ -221,8 +237,9 @@ fn candidate_names(bin: &str) -> Vec<String> {
     }
 }
 
-fn find_in_dirs(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+fn find_in_dirs(name: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
     let names = candidate_names(name);
+    let mut found = Vec::new();
     for dir in dirs {
         if !dir.is_dir() {
             continue;
@@ -230,11 +247,11 @@ fn find_in_dirs(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
         for file_name in &names {
             let path = dir.join(file_name);
             if is_runnable(&path) {
-                return Some(path);
+                found.push(path);
             }
         }
     }
-    None
+    found
 }
 
 fn is_runnable(path: &Path) -> bool {
@@ -489,6 +506,17 @@ mod tests {
         assert_eq!(found.as_deref(), Some(extra.as_path()));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn find_binary_prefers_windows_npm_cmd_shim_over_unix_shim() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("codex"), "#!/bin/sh\necho unix shim\n").unwrap();
+        let cmd = write_fake_cli(dir.path(), "codex", "", "echo codex-cli 1.0.0");
+
+        let found = find_binary("codex", &[dir.path().to_path_buf()], &[]);
+        assert_eq!(found.as_deref(), Some(cmd.as_path()));
+    }
+
     #[cfg(unix)]
     #[test]
     fn find_binary_skips_non_executable_files() {
@@ -517,6 +545,38 @@ mod tests {
         assert_eq!(info.kind, TargetKind::Codex);
         assert_eq!(info.path.as_deref(), Some(bin.to_str().unwrap()));
         assert_eq!(info.version, None);
+    }
+
+    #[test]
+    fn probe_prefers_working_binary_over_broken_earlier_shim() {
+        let broken_dir = tempfile::tempdir().unwrap();
+        let working_dir = tempfile::tempdir().unwrap();
+        write_fake_cli(
+            broken_dir.path(),
+            "codex",
+            "echo broken >&2\nexit 1",
+            "echo broken 1>&2\r\nexit /B 1",
+        );
+        let working = write_fake_cli(
+            working_dir.path(),
+            "codex",
+            "echo 'codex-cli 1.2.3'",
+            "echo codex-cli 1.2.3",
+        );
+
+        let info = probe_tool_with(
+            TargetKind::Codex,
+            "codex",
+            &ProbeEnv {
+                path_dirs: vec![
+                    broken_dir.path().to_path_buf(),
+                    working_dir.path().to_path_buf(),
+                ],
+                extra_dirs: vec![],
+            },
+        );
+        assert_eq!(info.path.as_deref(), working.to_str());
+        assert_eq!(info.version.as_deref(), Some("codex-cli 1.2.3"));
     }
 
     #[test]

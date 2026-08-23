@@ -1,8 +1,10 @@
 use crate::cli_detect::ProbeEnv;
-use crate::domain::{CliToolInfo, LaunchTargetRequest, TargetKind, TargetRuntimeStatus};
+use crate::domain::{
+    AppSettings, CliToolInfo, LaunchTargetRequest, TargetKind, TargetRuntimeStatus,
+};
 use crate::error::{AppError, AppResult};
-use crate::runtime::{self, LaunchMode, ProcessInfo};
 use crate::repo;
+use crate::runtime::{self, LaunchMode, ProcessInfo};
 use crate::state::AppState;
 use std::time::Duration;
 use tauri::{Manager, State};
@@ -37,6 +39,20 @@ fn status_for(
         executable_path: exe.map(|p| p.display().to_string()),
         error: None,
     }
+}
+
+fn target_launch_env(
+    kind: TargetKind,
+    exe: &std::path::Path,
+    probe: &ProbeEnv,
+    settings: &AppSettings,
+) -> AppResult<std::collections::HashMap<String, String>> {
+    let mut env = runtime::launch_env(exe, probe);
+    if kind == TargetKind::Pi {
+        let pi_home = crate::paths::resolve_pi_home(settings.pi_home_override.as_deref())?;
+        env.insert("PI_CODING_AGENT_DIR".into(), pi_home.display().to_string());
+    }
+    Ok(env)
 }
 
 async fn detect_tools_cached(force: bool) -> AppResult<Vec<CliToolInfo>> {
@@ -149,7 +165,7 @@ pub async fn launch_target(
             // launch always proceeds with a fresh visible terminal.
             let probe = ProbeEnv::from_process();
             let candidates = runtime::build_tui_launch_commands(&exe, &workdir);
-            let extra_env = runtime::launch_env(&exe, &probe);
+            let extra_env = target_launch_env(kind, &exe, &probe, &settings)?;
             runtime::try_spawn(&candidates, Some(&extra_env))?;
         }
     }
@@ -186,11 +202,10 @@ pub async fn focus_target(
     let mut status = status_for(target, &tools, &processes);
     match runtime::launch_mode(target) {
         LaunchMode::Gui => {
-            let focused = tauri::async_runtime::spawn_blocking(move || {
-                runtime::focus_gui_process(&exe, pid)
-            })
-            .await
-            .map_err(|e| AppError::new("internal", e.to_string()))?;
+            let focused =
+                tauri::async_runtime::spawn_blocking(move || runtime::focus_gui_process(&exe, pid))
+                    .await
+                    .map_err(|e| AppError::new("internal", e.to_string()))?;
             if !focused {
                 status.error = Some(runtime::redact_launch_error(
                     "focus unavailable: window could not be restored",
@@ -313,5 +328,31 @@ mod tests {
         assert!(status.pid.is_none());
         assert!(status.executable_path.is_none());
         assert!(status.error.is_none());
+    }
+
+    #[test]
+    fn pi_launch_env_points_to_the_configured_agent_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("pi.cmd");
+        std::fs::write(&exe, "@echo off\r\n").unwrap();
+        let pi_home = dir.path().join("custom-pi-agent");
+        let settings = AppSettings {
+            pi_home_override: Some(pi_home.display().to_string()),
+            ..AppSettings::default()
+        };
+        let env = target_launch_env(
+            TargetKind::Pi,
+            &exe,
+            &ProbeEnv {
+                path_dirs: vec![],
+                extra_dirs: vec![],
+            },
+            &settings,
+        )
+        .unwrap();
+        assert_eq!(
+            env.get("PI_CODING_AGENT_DIR"),
+            Some(&pi_home.display().to_string())
+        );
     }
 }

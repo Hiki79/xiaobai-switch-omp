@@ -738,7 +738,10 @@ pub fn detect_status(
                                     .join(",")
                             });
                         if live_levels.as_deref() != Some(expected.as_str()) {
-                            return Ok((ApplyStatus::Stale, Some("reasoning_levels mismatch".into())));
+                            return Ok((
+                                ApplyStatus::Stale,
+                                Some("reasoning_levels mismatch".into()),
+                            ));
                         }
                     }
                     _ => {}

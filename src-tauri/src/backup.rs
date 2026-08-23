@@ -1,8 +1,8 @@
 use crate::adapters::{claude_code, codex};
 use crate::crypto::key_prefix;
-use crate::domain::{
-    clamp_max_backup_copies, AppSettings, BackupFileInfo, BackupInfo, BackupPreview, TargetKind,
-};
+#[cfg(test)]
+use crate::domain::clamp_max_backup_copies;
+use crate::domain::{AppSettings, BackupFileInfo, BackupInfo, BackupPreview, TargetKind};
 use crate::error::{AppError, AppResult};
 use crate::paths::{backups_dir, codex_env_path};
 use serde::{Deserialize, Serialize};

@@ -449,7 +449,7 @@ pub struct PiApplyOptions {
     pub catalog_models: Vec<CatalogModel>,
     /// Effort ladder accepted by Pi (off|minimal|low|medium|high|xhigh|max).
     pub reasoning_levels: Vec<String>,
-    /// Default level written into settings.json `thinking`.
+    /// Default level written into settings.json `defaultThinkingLevel`.
     pub reasoning_level: Option<String>,
 }
 

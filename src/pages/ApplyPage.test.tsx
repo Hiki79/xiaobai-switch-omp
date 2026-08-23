@@ -144,6 +144,21 @@ describe("ApplyPage target switch", () => {
     expect(screen.getByText("鉴权字段")).toBeInTheDocument();
   });
 
+  it("opens the dedicated Pi apply panel", async () => {
+    await seedSite();
+    render(
+      <Wrapper>
+        <ApplyPage />
+      </Wrapper>,
+    );
+
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Pi (LazyPi)" }));
+    await waitFor(() => {
+      expect(screen.getByText("将站点全部模型写入 Pi")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Pi 思考等级")).toBeInTheDocument();
+  });
+
   it("shows a pulsing status dot for applied tools in the sidebar", async () => {
     await seedSite();
     useApplyStore.setState({

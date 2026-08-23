@@ -159,6 +159,23 @@ describe("TargetLaunchControl", () => {
     });
   });
 
+  it("launches Pi as a TUI target with its working directory", async () => {
+    seedRuntimeStatuses([runtime("pi")]);
+    renderControl({
+      target: "pi",
+      runtimeStatus: runtime("pi"),
+      workingDirectory: "D:/pi project",
+      onLaunch: () => useRuntimeStore.getState().launchTarget("pi", "D:/pi project"),
+    });
+    fireEvent.click(screen.getByRole("button", { name: /启\s*动/ }));
+    await waitFor(() => {
+      expect(getLastLaunchRequest()).toEqual({
+        target: "pi",
+        workingDirectory: "D:/pi project",
+      });
+    });
+  });
+
   it("shows the redacted error after a failed launch and allows retry", () => {
     renderControl({
       target: "codex",

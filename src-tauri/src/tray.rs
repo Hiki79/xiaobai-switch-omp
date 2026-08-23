@@ -268,13 +268,8 @@ impl TraySnapshot {
             None,
             None,
         );
-        let pi = format_target_status_line(
-            &labels,
-            TargetKind::Pi,
-            ApplyStatus::NotApplied,
-            None,
-            None,
-        );
+        let pi =
+            format_target_status_line(&labels, TargetKind::Pi, ApplyStatus::NotApplied, None, None);
         Self {
             language: language.to_string(),
             claude_line: claude.clone(),

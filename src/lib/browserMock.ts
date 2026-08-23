@@ -516,7 +516,9 @@ export async function handleBrowserCommand<T>(
                 ? Boolean(args?.zcodeWriteAllModels)
                 : row.kind === "dsh"
                   ? Boolean(args?.dshWriteAllModels)
-                : false;
+                  : row.kind === "pi"
+                    ? Boolean(args?.piWriteAllModels)
+                    : false;
         const allIds = (models.get(siteId) ?? []).map((m) => m.modelId);
         const written = writeAll
           ? Array.from(new Set([...(catalogIds ?? allIds), modelId]))
@@ -533,6 +535,16 @@ export async function handleBrowserCommand<T>(
             model: modelId,
             models: String(written.length),
             model_ids: written.join(","),
+            ...(row.kind === "pi"
+              ? {
+                  default_provider: `xiaobai-${siteId}`,
+                  default_model: modelId,
+                  default_thinking_level:
+                    (args?.piReasoningLevel as string | null) ?? undefined,
+                  thinking: (args?.piReasoningLevel as string | null) ?? undefined,
+                  reasoning_levels: ((args?.piReasoningLevels as string[] | null) ?? []).join(","),
+                }
+              : {}),
             ...(row.kind === "zcode" && typeof args?.zcodeContextWindow === "number"
               ? { model_context: String(args.zcodeContextWindow) }
               : {}),

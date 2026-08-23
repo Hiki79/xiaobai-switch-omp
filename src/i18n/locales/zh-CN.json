@@ -287,7 +287,7 @@
     "dshReasoningVariantsHint": "写入模型的 reasoningEfforts，档位限定为 pi-ai 支持的取值。始终思考模型会自动排除 off。",
     "groupPiReasoning": "Pi 思考等级",
     "piReasoningLevel": "默认思考等级",
-    "piReasoningHint": "写入 settings.json 的 thinking；支持 off/minimal/low/medium/high/xhigh/max。",
+    "piReasoningHint": "写入 settings.json 的 defaultThinkingLevel；支持 off/minimal/low/medium/high/xhigh/max。",
     "piReasoningVariantsHint": "写入模型的 thinking 支持档位。始终思考模型会自动排除 off。",
     "groupCodexCapabilities": "平台能力",
     "remoteCompaction": "远程压缩",
@@ -463,6 +463,7 @@
     "lock_busy": "目标正在被写入，请稍后重试",
     "master_key_missing": "无法解密已存密钥：master.key 丢失，请从备份恢复或清空数据目录",
     "invalid_config": "目标配置文件无效",
+    "apply_failed": "应用配置失败",
     "internal": "内部错误"
   },
   "launch": {

@@ -31,7 +31,7 @@ const CODEX_EFFORTS = new Set<CodexReasoningEffort>(CODEX_EFFORT_LIST);
 export const OMP_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 /** Effort identifiers accepted by dsh's pi-ai adapter. */
 export const DSH_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
-/** Effort ladder Pi accepts in settings.json thinking. */
+/** Effort ladder Pi accepts in settings.json defaultThinkingLevel. */
 export const PI_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 const DEFAULT_FAMILY_LEVELS = ["low", "medium", "high", "max"];
@@ -389,13 +389,15 @@ export function dshReasoningLevelsForModel(modelId: string | undefined): string[
   return intersectLevels(modelId, DSH_EFFORTS);
 }
 
-/** Pi settings.json thinking options for the selected model. */
+/** Pi settings.json defaultThinkingLevel options for the selected model. */
 export function piReasoningLevelsForModel(modelId: string | undefined): string[] {
   const strictLevels = strictReasoningLevelsForModel(modelId);
   if (strictLevels) {
     return strictLevels.filter((level) => (PI_EFFORTS as readonly string[]).includes(level));
   }
-  return intersectLevels(modelId, PI_EFFORTS);
+  const family = ZCODE_MODEL_LEVELS.find((entry) => entry.matches.test(modelId ?? ""));
+  const levels = family?.levels ?? ["low", "high", "max"];
+  return levels.filter((level) => (PI_EFFORTS as readonly string[]).includes(level));
 }
 
 const PREFERRED_DEFAULT_LEVELS = ["max", "xhigh", "high", "medium", "low", "minimal", "off"];
@@ -563,7 +565,9 @@ export function hydratePiForm(
     reasoningLevels,
     reasoningLevel: defaultReasoningLevel(
       reasoningLevels,
-      onSite ? liveStr(live, "thinking") : undefined,
+      onSite
+        ? (liveStr(live, "default_thinking_level") ?? liveStr(live, "thinking"))
+        : undefined,
     ),
   };
 }

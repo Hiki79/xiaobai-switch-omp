@@ -200,13 +200,24 @@ pub(crate) fn detect_cli_tools_cached(force: bool) -> Vec<CliToolInfo> {
             }
         }
     }
+    let pi = ["pi", "lazypi"]
+        .into_iter()
+        .map(|name| cli_detect::probe_tool(TargetKind::Pi, name))
+        .find(|tool| tool.installed && tool.version.is_some())
+        .or_else(|| {
+            ["pi", "lazypi"]
+                .into_iter()
+                .map(|name| cli_detect::probe_tool(TargetKind::Pi, name))
+                .find(|tool| tool.installed)
+        })
+        .unwrap_or_else(|| cli_detect::probe_tool(TargetKind::Pi, "pi"));
     let tools = vec![
         cli_detect::probe_tool(TargetKind::ClaudeCode, "claude"),
         cli_detect::probe_tool(TargetKind::Codex, "codex"),
         cli_detect::probe_tool(TargetKind::Omp, "omp"),
         cli_detect::probe_tool(TargetKind::Zcode, "zcode"),
         cli_detect::probe_tool(TargetKind::Dsh, "dsh"),
-        cli_detect::probe_tool(TargetKind::Pi, "pi"),
+        pi,
     ];
     *CLI_PROBE_CACHE.lock() = Some(CliProbeCache {
         tools: tools.clone(),
@@ -239,7 +250,7 @@ pub fn cleanup_orphan_target(
                     settings.codex_home_override.as_deref(),
                 )?;
                 if let Some(env_key) = b.managed_env_keys.first() {
-                    let _ = crate::env_inject::remove_codex_env(&settings, env_key);
+                    crate::env_inject::remove_codex_env(&settings, env_key)?;
                 }
             }
             TargetKind::Omp => {

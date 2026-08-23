@@ -54,7 +54,7 @@ pub fn remove_codex_env(settings: &AppSettings, env_key: &str) -> AppResult<()> 
         _ => "shell_rc",
     };
     if effective == "user_env" {
-        let _ = user_env::remove_user_env(env_key);
+        user_env::remove_user_env(env_key)?;
     }
     Ok(())
 }

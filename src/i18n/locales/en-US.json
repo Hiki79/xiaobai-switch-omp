@@ -287,7 +287,7 @@
     "dshReasoningVariantsHint": "Writes model reasoningEfforts using pi-ai's accepted identifiers. Always-thinking models automatically exclude off.",
     "groupPiReasoning": "Pi thinking levels",
     "piReasoningLevel": "Default thinking level",
-    "piReasoningHint": "Writes thinking in settings.json; supports off/minimal/low/medium/high/xhigh/max.",
+    "piReasoningHint": "Writes defaultThinkingLevel in settings.json; supports off/minimal/low/medium/high/xhigh/max.",
     "piReasoningVariantsHint": "Writes model thinking levels. Always-thinking models automatically exclude off.",
     "groupCodexCapabilities": "Provider capabilities",
     "remoteCompaction": "Remote compaction",
@@ -463,6 +463,7 @@
     "lock_busy": "Target is busy, try again",
     "master_key_missing": "Cannot decrypt keys: master.key missing. Restore backup or clear data dir.",
     "invalid_config": "Invalid target config file",
+    "apply_failed": "Configuration application failed",
     "internal": "Internal error"
   },
   "launch": {

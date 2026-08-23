@@ -83,7 +83,10 @@ pub fn default_dsh_home() -> AppResult<PathBuf> {
 }
 
 pub fn default_pi_home() -> AppResult<PathBuf> {
-    if let Ok(v) = std::env::var("PI_HOME") {
+    // Pi 0.84.2 resolves its agent dir from PI_CODING_AGENT_DIR only (see
+    // getAgentDir in pi's config.js); it never reads PI_HOME, so honoring it
+    // here would write configs where Pi cannot find them.
+    if let Ok(v) = std::env::var("PI_CODING_AGENT_DIR") {
         if !v.trim().is_empty() {
             return Ok(PathBuf::from(v));
         }

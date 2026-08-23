@@ -11,8 +11,10 @@ import {
   hydrateCodexForm,
   hydrateDshForm,
   hydrateOmpForm,
+  hydratePiForm,
   hydrateZcodeForm,
   ompReasoningLevelsForModel,
+  piReasoningLevelsForModel,
   parseLiveModelIds,
   pickApplySiteId,
   selectableApplySites,
@@ -474,6 +476,54 @@ describe("hydrateDshForm", () => {
     );
     expect(defaults.reasoningLevels).toEqual(["low", "high", "max"]);
     expect(defaults.reasoningLevel).toBe("max");
+  });
+});
+
+describe("hydratePiForm", () => {
+  it("round-trips the Pi catalog and default thinking level", () => {
+    const defaults = hydratePiForm(
+      site({ id: "shuai", selectedModelId: "gpt-4.1" }),
+      status({
+        kind: "pi",
+        appliedSiteId: "shuai",
+        liveSummary: {
+          default_provider: "xiaobai-shuai",
+          default_model: "gpt-4.1",
+          models: "2",
+          model_ids: "gpt-4.1,claude-sonnet-4",
+          reasoning_levels: "low,medium,high,xhigh",
+          default_thinking_level: "high",
+        },
+      }),
+    );
+    expect(defaults).toMatchObject({
+      modelId: "gpt-4.1",
+      writeAllModels: true,
+      reasoningLevels: ["low", "medium", "high", "xhigh"],
+      reasoningLevel: "high",
+    });
+  });
+
+  it("removes stale off from always-thinking Pi models", () => {
+    expect(piReasoningLevelsForModel("ox-alpha-free")).toEqual(["low", "high", "max"]);
+    const defaults = hydratePiForm(
+      site({ id: "shuai", selectedModelId: "ox-alpha-free" }),
+      status({
+        kind: "pi",
+        appliedSiteId: "shuai",
+        liveSummary: {
+          default_model: "ox-alpha-free",
+          reasoning_levels: "off,high,max",
+          default_thinking_level: "off",
+        },
+      }),
+    );
+    expect(defaults.reasoningLevels).toEqual(["low", "high", "max"]);
+    expect(defaults.reasoningLevel).toBe("max");
+  });
+
+  it("uses the relay-safe low/high/max fallback for unknown Pi models", () => {
+    expect(piReasoningLevelsForModel("mystery-model")).toEqual(["low", "high", "max"]);
   });
 });
 

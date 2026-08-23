@@ -192,7 +192,7 @@ export interface ApplyRequest {
   piWriteAllModels?: boolean;
   /** Effort ladder accepted by Pi (off|minimal|low|medium|high|xhigh|max). */
   piReasoningLevels?: string[] | null;
-  /** Default thinking level written into settings.json thinking. */
+  /** Default thinking level written into settings.json defaultThinkingLevel. */
   piReasoningLevel?: string | null;
   /** Checked site model ids to write when a write-all toggle is on
    * (applies to codex/omp/zcode/dsh/pi); null/undefined means "every site model". */

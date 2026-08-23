@@ -5,8 +5,8 @@ use crate::capabilities::{
 use crate::domain::{
     ApplyRecordDto, ApplyResult, ApplyStatus, ApplyTargetResult, BackupInfo, BackupPreview,
     CapabilitySource, CatalogModel, ClaudeApplyOptions, ClaudeAuthKeyStyle, ClaudeEffortLevel,
-    CodexApplyOptions, CodexReasoningEffort, DshApplyOptions, OmpApplyOptions, SiteRow,
-    TargetBinding, TargetKind, TouchedKeys, ZcodeApplyOptions,
+    CodexApplyOptions, CodexReasoningEffort, DshApplyOptions, OmpApplyOptions, PiApplyOptions,
+    SiteRow, TargetBinding, TargetKind, TouchedKeys, ZcodeApplyOptions,
 };
 use crate::error::{AppError, AppResult};
 use crate::lock::try_lock_target;
@@ -22,6 +22,53 @@ use uuid::Uuid;
 
 fn non_empty(s: Option<String>) -> Option<String> {
     s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
+fn normalize_pi_reasoning(
+    model_id: &str,
+    levels: Option<Vec<String>>,
+    default_level: Option<String>,
+) -> AppResult<(Vec<String>, Option<String>)> {
+    let parse = |raw: &str| {
+        let level = raw.trim().to_ascii_lowercase();
+        crate::adapters::pi::PI_EFFORT_LEVELS
+            .contains(&level.as_str())
+            .then_some(level)
+    };
+    let mut normalized = Vec::new();
+    for raw in levels.unwrap_or_default() {
+        if raw.trim().is_empty() {
+            continue;
+        }
+        let Some(level) = parse(&raw) else {
+            return Err(AppError::new(
+                "validation_failed",
+                format!("unsupported Pi reasoning level: {}", raw.trim()),
+            ));
+        };
+        if !normalized.contains(&level) {
+            normalized.push(level);
+        }
+    }
+    let mut default_level = match non_empty(default_level) {
+        Some(raw) => Some(parse(&raw).ok_or_else(|| {
+            AppError::new(
+                "validation_failed",
+                format!("unsupported Pi default reasoning level: {raw}"),
+            )
+        })?),
+        None => None,
+    };
+    if let Some(always) = crate::reasoning_meta::always_thinking_levels(model_id) {
+        normalized.retain(|level| always.contains(level));
+        if default_level
+            .as_deref()
+            .is_some_and(|level| !always.iter().any(|allowed| allowed == level))
+        {
+            default_level = None;
+        }
+    }
+    Ok((normalized, default_level))
 }
 
 /// Shared success path: persist binding + apply record, build the IPC result.
@@ -114,6 +161,57 @@ fn record_failure(
         live_summary: None,
         touched_keys: None,
     }
+}
+
+/// Persist a failed apply whose target files may still contain the managed
+/// configuration. Keeping the binding lets cleanup/retry find those files.
+#[allow(clippy::too_many_arguments)]
+fn record_failed_binding(
+    db: &crate::db::Db,
+    target: TargetKind,
+    site: &SiteRow,
+    model_id: &str,
+    applied_at: i64,
+    backup_root: &Path,
+    binding: &TargetBinding,
+    touched: &TouchedKeys,
+    backup_paths: Vec<String>,
+    live_summary: HashMap<String, Option<String>>,
+    error: &AppError,
+    touched_display: Vec<String>,
+) -> AppResult<ApplyTargetResult> {
+    let record_id = binding
+        .apply_record_id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let mut stored = binding.clone();
+    stored.apply_record_id = Some(record_id.clone());
+    db.with_conn(|c| repo::binding::upsert_binding(c, &stored))?;
+    db.with_conn(|c| {
+        repo::apply::insert_record(
+            c,
+            &record_id,
+            Some(&site.id),
+            &site.name,
+            target.as_str(),
+            model_id,
+            binding.provider_id.as_deref(),
+            "failed",
+            Some(&backup_root.display().to_string()),
+            touched,
+            Some(&error.to_string()),
+            applied_at,
+        )
+    })?;
+    Ok(ApplyTargetResult {
+        target,
+        ok: false,
+        status: ApplyStatus::Failed,
+        backup_paths,
+        message: error.to_string(),
+        live_summary: Some(live_summary),
+        touched_keys: Some(touched_display),
+    })
 }
 
 #[tauri::command]
@@ -285,11 +383,16 @@ pub fn apply_site(
         reasoning_level: non_empty(dsh_reasoning_level),
     };
 
-    let pi_opts = crate::domain::PiApplyOptions {
+    let (pi_reasoning_levels, pi_reasoning_level) = if targets.contains(&TargetKind::Pi) {
+        normalize_pi_reasoning(&model_id, pi_reasoning_levels, pi_reasoning_level)?
+    } else {
+        (Vec::new(), None)
+    };
+    let pi_opts = PiApplyOptions {
         write_all_models: pi_write_all,
         catalog_models: catalog_models.clone(),
-        reasoning_levels: pi_reasoning_levels.unwrap_or_default(),
-        reasoning_level: non_empty(pi_reasoning_level),
+        reasoning_levels: pi_reasoning_levels,
+        reasoning_level: pi_reasoning_level,
     };
 
     let codex_opts = CodexApplyOptions {
@@ -331,24 +434,60 @@ pub fn apply_site(
                     &backup_root,
                 ) {
                     Ok(o) => {
-                        let inject_msg =
-                            crate::env_inject::inject_codex_env(&settings, &o.env_key, &api_key)
-                                .unwrap_or_else(|e| e.to_string());
-                        record_success(
-                            &state,
-                            target,
-                            &site,
-                            &model_id,
-                            applied_at,
-                            &backup_root,
-                            &o.binding,
-                            &o.touched,
-                            o.backup_paths,
-                            o.live_summary,
-                            format!("{} {}", o.message, inject_msg),
-                            Some(&o.provider_id),
-                            o.touched.env_keys.clone(),
-                        )
+                        match crate::env_inject::inject_codex_env(&settings, &o.env_key, &api_key) {
+                            Ok(inject_msg) => record_success(
+                                &state,
+                                target,
+                                &site,
+                                &model_id,
+                                applied_at,
+                                &backup_root,
+                                &o.binding,
+                                &o.touched,
+                                o.backup_paths,
+                                o.live_summary,
+                                format!("{} {}", o.message, inject_msg),
+                                Some(&o.provider_id),
+                                o.touched.env_keys.clone(),
+                            ),
+                            Err(inject_err) => {
+                                let rollback = crate::adapters::codex::surgical_revert(
+                                    &o.binding,
+                                    settings.codex_home_override.as_deref(),
+                                );
+                                match rollback {
+                                    Ok(()) => Ok(record_failure(
+                                        &state,
+                                        target,
+                                        &site,
+                                        &model_id,
+                                        applied_at,
+                                        &backup_root,
+                                        &inject_err,
+                                    )),
+                                    Err(rollback_err) => {
+                                        let error = AppError::new(
+                                            "internal",
+                                            format!("Codex environment injection failed: {inject_err}; rollback failed: {rollback_err}"),
+                                        );
+                                        record_failed_binding(
+                                            &state.db,
+                                            target,
+                                            &site,
+                                            &model_id,
+                                            applied_at,
+                                            &backup_root,
+                                            &o.binding,
+                                            &o.touched,
+                                            o.backup_paths,
+                                            o.live_summary,
+                                            &error,
+                                            o.touched.env_keys.clone(),
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                     Err(e) => Ok(record_failure(
                         &state,
@@ -635,7 +774,7 @@ pub fn revert_target(
                 settings.codex_home_override.as_deref(),
             )?;
             if let Some(env_key) = binding.managed_env_keys.first() {
-                let _ = crate::env_inject::remove_codex_env(&settings, env_key);
+                crate::env_inject::remove_codex_env(&settings, env_key)?;
             }
         }
         TargetKind::Omp => {
@@ -695,10 +834,11 @@ pub fn restore_official_target(
             settings.codex_home_override.as_deref(),
             &backup_root,
         )
-        .map(|outcome| {
-            for key in &outcome.env_keys {
-                let _ = crate::env_inject::remove_codex_env(&settings, key);
-            }
+        .and_then(|outcome| {
+            outcome
+                .env_keys
+                .iter()
+                .try_for_each(|key| crate::env_inject::remove_codex_env(&settings, key))
         }),
         TargetKind::Omp => crate::adapters::omp::restore_official(
             settings.omp_home_override.as_deref(),
@@ -820,4 +960,127 @@ pub fn restore_backup(
     backup::restore_backup_in(&backups_dir()?, &id, &settings, None)?;
     crate::tray::request_tray_menu_sync(&app);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pi_reasoning_rejects_unknown_levels() {
+        let error = normalize_pi_reasoning(
+            "gpt-5.2",
+            Some(vec!["high".into(), "turbo".into()]),
+            Some("high".into()),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("unsupported Pi reasoning level"));
+    }
+
+    #[test]
+    fn pi_reasoning_normalizes_and_enforces_always_thinking_models() {
+        let (levels, default) = normalize_pi_reasoning(
+            "ox-alpha-free",
+            Some(vec![" OFF ".into(), "HIGH".into(), "high".into()]),
+            Some("off".into()),
+        )
+        .unwrap();
+        assert_eq!(levels, vec!["high"]);
+        assert_eq!(default, None);
+    }
+
+    #[test]
+    fn failed_binding_is_kept_with_failed_record_for_retry() {
+        use rusqlite::Connection;
+        use std::sync::Mutex;
+
+        let db = crate::db::Db {
+            conn: Mutex::new(Connection::open_in_memory().unwrap()),
+        };
+        db.migrate().unwrap();
+        // The binding carries a foreign key to its site row.
+        db.with_conn(|c| {
+            c.execute(
+                "INSERT INTO sites (id, name, base_url, api_key_encrypted, key_prefix, protocol, claude_auth_key_style, enabled, sort_order, created_at, updated_at, base_urls_json, capabilities_json) \
+                 VALUES ('site-1', 'Relay', 'https://relay.example.com', 'enc', 'sk-test', 'openai_compatible', 'anthropic_auth_token', 1, 0, 0, 0, '[\"https://relay.example.com\"]', '{}')",
+                [],
+            )
+            .map_err(|e| AppError::new("internal", e.to_string()))
+        })
+        .unwrap();
+
+        let site = SiteRow {
+            id: "site-1".into(),
+            name: "Relay".into(),
+            base_url: "https://relay.example.com".into(),
+            base_urls: vec!["https://relay.example.com".into()],
+            api_key_encrypted: String::new(),
+            key_prefix: "sk-test".into(),
+            protocol: crate::domain::SiteProtocol::OpenaiCompatible,
+            claude_auth_key_style: ClaudeAuthKeyStyle::AnthropicAuthToken,
+            notes: None,
+            enabled: true,
+            sort_order: 0,
+            selected_model_id: Some("gpt-5.2".into()),
+            last_model_fetch_at: None,
+            last_model_fetch_latency_ms: None,
+            last_model_fetch_error: None,
+            created_at: 0,
+            updated_at: 0,
+            capabilities: Default::default(),
+        };
+        let binding = TargetBinding {
+            target: TargetKind::Codex,
+            site_id: Some(site.id.clone()),
+            site_name_snapshot: site.name.clone(),
+            model_id: "gpt-5.2".into(),
+            provider_id: Some("xiaobai-site-1".into()),
+            key_fingerprint: "fp".into(),
+            managed_paths: vec!["C:\\tmp\\config.toml".into()],
+            managed_env_keys: vec![],
+            expected_fields: HashMap::new(),
+            orphan: false,
+            applied_at: 1,
+            apply_record_id: Some("record-1".into()),
+        };
+        let error = AppError::new("internal", "rollback failed");
+        let result = record_failed_binding(
+            &db,
+            TargetKind::Codex,
+            &site,
+            "gpt-5.2",
+            42,
+            Path::new("C:\\backups"),
+            &binding,
+            &TouchedKeys::default(),
+            vec![],
+            HashMap::new(),
+            &error,
+            vec![],
+        )
+        .unwrap();
+
+        // The IPC result reports failure with the redacted error message.
+        assert!(!result.ok);
+        assert_eq!(result.status, ApplyStatus::Failed);
+
+        // The binding survives (still bound to its site) so cleanup/retry can
+        // find the partially-written files.
+        let kept = db
+            .with_conn(|c| repo::binding::get_binding(c, TargetKind::Codex))
+            .unwrap()
+            .expect("binding must be retained after a failed apply");
+        assert_eq!(kept.site_id.as_deref(), Some("site-1"));
+        assert_eq!(kept.apply_record_id.as_deref(), Some("record-1"));
+
+        // A failed apply record references the same id for traceability.
+        let records = db.with_conn(|c| repo::apply::list_records(c, 10)).unwrap();
+        let failed = records.iter().find(|r| r.id == "record-1").unwrap();
+        assert_eq!(failed.status, "failed");
+        assert!(failed
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("rollback failed"));
+    }
 }

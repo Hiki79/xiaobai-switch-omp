@@ -959,48 +959,88 @@ pub fn detect_status(
                 for (k, expected) in &b.expected_fields {
                     match k.as_str() {
                         "model" => {
-                            if live.get("model").and_then(|v| v.as_deref()) != Some(expected.as_str()) {
+                            if live.get("model").and_then(|v| v.as_deref())
+                                != Some(expected.as_str())
+                            {
                                 return Ok((ApplyStatus::Stale, Some("model mismatch".into())));
                             }
                         }
                         "base_url" => {
-                            if live.get("base_url").and_then(|v| v.as_deref()) != Some(expected.as_str()) {
+                            if live.get("base_url").and_then(|v| v.as_deref())
+                                != Some(expected.as_str())
+                            {
                                 return Ok((ApplyStatus::Stale, Some("base_url mismatch".into())));
                             }
                         }
                         "env_key" => {
-                            if live.get("env_key").and_then(|v| v.as_deref()) != Some(expected.as_str()) {
+                            if live.get("env_key").and_then(|v| v.as_deref())
+                                != Some(expected.as_str())
+                            {
                                 return Ok((ApplyStatus::Stale, Some("env_key mismatch".into())));
                             }
                         }
                         "model_reasoning_effort" => {
-                            if live.get("model_reasoning_effort").and_then(|v| v.as_deref()) != Some(expected.as_str()) {
-                                return Ok((ApplyStatus::Stale, Some("model_reasoning_effort mismatch".into())));
+                            if live
+                                .get("model_reasoning_effort")
+                                .and_then(|v| v.as_deref())
+                                != Some(expected.as_str())
+                            {
+                                return Ok((
+                                    ApplyStatus::Stale,
+                                    Some("model_reasoning_effort mismatch".into()),
+                                ));
                             }
                         }
                         "web_search" => {
-                            if live.get("web_search").and_then(|v| v.as_deref()) != Some(expected.as_str()) {
-                                return Ok((ApplyStatus::Stale, Some("web_search mismatch".into())));
+                            if live.get("web_search").and_then(|v| v.as_deref())
+                                != Some(expected.as_str())
+                            {
+                                return Ok((
+                                    ApplyStatus::Stale,
+                                    Some("web_search mismatch".into()),
+                                ));
                             }
                         }
                         "tools_view_image" => {
-                            if live.get("tools_view_image").and_then(|v| v.as_deref()) != Some(expected.as_str()) {
-                                return Ok((ApplyStatus::Stale, Some("tools_view_image mismatch".into())));
+                            if live.get("tools_view_image").and_then(|v| v.as_deref())
+                                != Some(expected.as_str())
+                            {
+                                return Ok((
+                                    ApplyStatus::Stale,
+                                    Some("tools_view_image mismatch".into()),
+                                ));
                             }
                         }
                         "features_image_generation" => {
-                            if live.get("features_image_generation").and_then(|v| v.as_deref()) != Some(expected.as_str()) {
-                                return Ok((ApplyStatus::Stale, Some("features_image_generation mismatch".into())));
+                            if live
+                                .get("features_image_generation")
+                                .and_then(|v| v.as_deref())
+                                != Some(expected.as_str())
+                            {
+                                return Ok((
+                                    ApplyStatus::Stale,
+                                    Some("features_image_generation mismatch".into()),
+                                ));
                             }
                         }
                         "remote_compaction" => {
-                            if live.get("remote_compaction").and_then(|v| v.as_deref()) != Some(expected.as_str()) {
-                                return Ok((ApplyStatus::Stale, Some("remote_compaction mismatch".into())));
+                            if live.get("remote_compaction").and_then(|v| v.as_deref())
+                                != Some(expected.as_str())
+                            {
+                                return Ok((
+                                    ApplyStatus::Stale,
+                                    Some("remote_compaction mismatch".into()),
+                                ));
                             }
                         }
                         "model_catalog_json" => {
-                            if live.get("model_catalog_json").and_then(|v| v.as_deref()) != Some(expected.as_str()) {
-                                return Ok((ApplyStatus::Stale, Some("model_catalog_json mismatch".into())));
+                            if live.get("model_catalog_json").and_then(|v| v.as_deref())
+                                != Some(expected.as_str())
+                            {
+                                return Ok((
+                                    ApplyStatus::Stale,
+                                    Some("model_catalog_json mismatch".into()),
+                                ));
                             }
                         }
                         _ => {}
