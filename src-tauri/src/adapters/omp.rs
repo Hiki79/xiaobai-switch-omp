@@ -133,10 +133,15 @@ fn model_entry(id: &str, name: &str) -> Yaml {
     Yaml::Mapping(m)
 }
 
-/// Effort levels omp understands on the `:level` role suffix and in
-/// `thinking.levels` (oh-my-pi docs: off|minimal|low|medium|high|xhigh|max).
+/// Effort levels omp understands on the `:level` role suffix
+/// (oh-my-pi docs: off|minimal|low|medium|high|xhigh|max).
 pub const OMP_EFFORT_LEVELS: [&str; 7] =
     ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/// Levels omp accepts in `modelOverrides.<model>.thinking.levels`. The
+/// installed omp schema rejects `off` there — it is a selector suffix only —
+/// and a single invalid level makes omp drop the entire models.yml.
+const OMP_WIRE_LEVELS: [&str; 6] = ["minimal", "low", "medium", "high", "xhigh", "max"];
 
 fn sanitize_level(raw: &str) -> Option<String> {
     let value = raw.trim().to_ascii_lowercase();
@@ -148,13 +153,39 @@ fn sanitize_level(raw: &str) -> Option<String> {
 fn sanitize_levels(raw: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     for value in raw {
-        if let Some(level) = sanitize_level(value) {
-            if !out.contains(&level) {
-                out.push(level);
-            }
+        let level = value.trim().to_ascii_lowercase();
+        if OMP_WIRE_LEVELS.contains(&level.as_str()) && !out.contains(&level) {
+            out.push(level);
         }
     }
     out
+}
+
+/// before_provider_request shim installed into omp's extension discovery dir.
+/// omp's openai-completions wire carries `anyOf` unions that Gemini upstreams
+/// (reached through OpenAI-compatible relays) reject with HTTP 400; the shim
+/// flattens those schemas right before the request is sent. Non-Gemini models
+/// are untouched, so the file is safe to leave installed for every site.
+const EXTENSION_FILE: &str = "xiaobai-gemini-schema.ts";
+const EXTENSION_SOURCE: &str = include_str!("gemini_schema_extension.ts");
+
+fn install_gemini_shim(home: &Path, touched: &mut TouchedKeys) {
+    let path = home.join("extensions").join(EXTENSION_FILE);
+    let existing = fs::read_to_string(&path).ok();
+    if existing.as_deref() == Some(EXTENSION_SOURCE) {
+        touched.paths.push(path.display().to_string());
+        return;
+    }
+    let wrote = fs::create_dir_all(path.parent().expect("extension path has a parent"))
+        .and_then(|_| fs::write(&path, EXTENSION_SOURCE));
+    if wrote.is_ok() {
+        (if existing.is_some() {
+            &mut touched.paths
+        } else {
+            &mut touched.created_paths
+        })
+        .push(path.display().to_string());
+    }
 }
 
 /// Effort ladder + reasoning flags omp needs to expose thinking control for a
@@ -419,6 +450,13 @@ pub fn apply(
         rollback(&backups);
         return Err(e);
     }
+
+    // ---- gemini schema shim (best-effort mitigation) ----
+    // omp's openai-completions wire does not Google-normalize tool schemas;
+    // Gemini upstreams reject the anyOf unions with HTTP 400. The shim flattens
+    // them at request time. Failure to install is not fatal: the config above
+    // is valid and omp would surface the upstream 400 as before.
+    install_gemini_shim(&home, &mut touched);
 
     // ---- self-check ----
     let verify_models = read_yaml(&models_p)?;
@@ -939,6 +977,9 @@ mod tests {
             compat.get(&s("supportsReasoningEffort")),
             Some(&Yaml::Bool(true))
         );
+
+        // "off" is a selector suffix, not a wire level: omp's schema rejects
+        // it inside thinking.levels and would drop the entire models.yml.
         let levels = get_mapping(entry, "thinking")
             .unwrap()
             .get(&s("levels"))
@@ -947,7 +988,17 @@ mod tests {
             .iter()
             .filter_map(Yaml::as_str)
             .collect::<Vec<_>>();
-        assert_eq!(levels, vec!["off", "high", "max"]);
+        assert_eq!(levels, vec!["high", "max"]);
+
+        // The wire shim lands in omp's extension discovery dir so Gemini
+        // upstreams stop rejecting the anyOf tool schemas.
+        let shim = home.join("extensions").join(EXTENSION_FILE);
+        assert!(shim.exists(), "gemini shim must be installed");
+        assert_eq!(
+            fs::read_to_string(&shim).unwrap(),
+            EXTENSION_SOURCE,
+            "shim content must match the bundled asset"
+        );
 
         let cfg = read_yaml(&config_path(Some(home.to_str().unwrap())).unwrap()).unwrap();
         let sel = format!("{pid}/glm-5.3:max");
@@ -968,7 +1019,7 @@ mod tests {
         );
         assert_eq!(
             summary.get("reasoning_levels").and_then(|v| v.as_deref()),
-            Some("off,high,max")
+            Some("high,max")
         );
 
         let (status, reason) = detect_status(
